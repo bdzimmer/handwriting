@@ -38,8 +38,8 @@ def extract_line_image(line, image, px_above, px_below):
     p2 = np.array(line_full[2:4], dtype=np.int)
 
     pts_t = cv2.transform(np.array([[p1, p2]]), t_mat)
-    p1_t = pts_t[0][0]
-    p2_t = pts_t[0][1]
+    p1_t = np.maximum(pts_t[0][0], 0)
+    p2_t = np.maximum(pts_t[0][1], 0)
 
     # segment by slicing a fixed amount above and below the line
     line_y = p1_t[1] # should be very close to p2_t[1] - could average the two

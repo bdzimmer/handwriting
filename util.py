@@ -12,12 +12,27 @@ from sklearn.neighbors import KernelDensity
 VISUALIZE = False
 
 
+def patch_image(bmps):
+
+    """combine up to 256 images into a larger image"""
+
+    patch_size = bmps[0].shape[0]
+
+    res = np.zeros((16 * patch_size, 16 * patch_size, 3), dtype=np.uint8)
+
+    for idx in range(min(len(bmps), 256)):
+        col = idx % 16 * patch_size
+        row = int(idx / 16) * patch_size
+        res[row:(row + patch_size), col:(col + patch_size)] = bmps[idx]
+
+    return res
+
+
 def find_peak_idxs(data, data_range, bandwidth):
 
     """find locations of peaks in a KDE"""
 
     # build 1D KDE of r values
-    # bandwidth should be estimated based on width of notebook paper lines
     kde = KernelDensity(kernel="gaussian", bandwidth=bandwidth).fit(
         data.reshape(-1, 1))
     log_density = kde.score_samples(

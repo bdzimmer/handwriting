@@ -174,6 +174,8 @@ def main(argv):
                 lgaps = find_letter_positions(word_image)
                 return Prediction(word_image, lgaps, 0.0, False)
 
+            # TODO: filter verified predictions
+
             preds = [init_lgap_prediction(x.data, y)
                      for x in word_positions
                      for y in x.result]
@@ -187,6 +189,32 @@ def main(argv):
         preds_verified = verify_predictions(
             preds, build_select(20), annotate.annotate_letter_gaps)
 
+    elif verify_type == "character":
+
+        # verify character classification
+
+        if not preds_loaded:
+            print("generating initial character classifications")
+
+            with open(input_filename + ".lgap.pkl", "rb") as lgap_file:
+                letter_gaps = pickle.load(lgap_file)
+
+            letter_gaps = [x for x in letter_gaps if x.verified]
+
+            char_data = [(y, x.data)
+                         for x in letter_gaps
+                         for y in extract.extract_letters(x.data, x.result)]
+
+            preds = [Prediction(x, "Z", 0.0, False) for x in char_data]
+
+        print("Verify character classification.")
+        print("key:    assign character")
+        print("escape: done")
+        print()
+
+        preds_verified = verify_predictions(
+            preds, build_select(0),
+            lambda x, y: annotate.annotate_character(x[0], x[1], y))
 
     with open(preds_filename, "wb") as preds_file:
         pickle.dump(preds_verified, preds_file)

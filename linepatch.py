@@ -14,22 +14,7 @@ import cv2
 import sklearn.svm
 
 import geom
-
-
-def patch_image(bmps):
-
-    """combine up to 256 images into a larger image"""
-
-    patch_size = bmps[0].shape[0]
-
-    res = np.zeros((16 * patch_size, 16 * patch_size, 3), dtype=np.uint8)
-
-    for idx in range(min(len(bmps), 256)):
-        row = idx % 16 * patch_size
-        col = int(idx / 16) * patch_size
-        res[row:(row + patch_size), col:(col + patch_size)] = bmps[idx]
-
-    return res
+import util
 
 
 def main():
@@ -126,10 +111,10 @@ def main():
     cv2.resizeWindow("image", int(im.shape[1] / 2), int(im.shape[0] / 2))
 
     cv2.namedWindow("line patches", cv2.WINDOW_NORMAL)
-    cv2.imshow("line patches", patch_image([x[4] for x in patches if x[3]]))
+    cv2.imshow("line patches", util.patch_image([x[4] for x in patches if x[3]]))
 
     cv2.namedWindow("non-line patches", cv2.WINDOW_NORMAL)
-    cv2.imshow("non-line patches", patch_image([x[4] for x in patches if not x[3]]))
+    cv2.imshow("non-line patches", util.patch_image([x[4] for x in patches if not x[3]]))
 
     cv2.namedWindow("prediction", cv2.WINDOW_NORMAL)
     cv2.imshow("prediction", pred_image)

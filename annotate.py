@@ -207,33 +207,35 @@ def annotate_letter_gaps(word_image, letter_gaps):
     return lgaps
 
 
-def annotate_letter(letter_image, letter):
+def annotate_character(char_image, word_image, character):
 
-    """Interactively label an image of a letter."""
+    """Interactively label an image of a character."""
 
     scale_factor = 1.0
 
     def draw():
         """helper"""
-        disp_image = np.copy(letter_image)
+        disp_image = np.copy(char_image)
         cv2.putText(
-            disp_image, letter, (0, 20),
+            disp_image, character, (0, 20),
             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        cv2.imshow("letter image", cv2.resize(
+        cv2.imshow("character image", cv2.resize(
             disp_image,
             (int(disp_image.shape[1] * scale_factor), int(disp_image.shape[0] * scale_factor))))
 
-    cv2.namedWindow("letter image", cv2.WINDOW_NORMAL)
+    cv2.imshow("word image", cv2.resize(word_image, (word_image.shape[1] * 2, word_image.shape[0] * 2)))
+    cv2.resizeWindow("word image", word_image.shape[1] * 2, word_image.shape[0] * 2)
+    cv2.namedWindow("character image", cv2.WINDOW_NORMAL)
     draw()
 
     key = cv2.waitKey(600000)
     if key == 27:
-        new_letter = letter
-    elif key == 8:
-        new_letter = None
+        new_char = char_image
+    elif key == 8: # backspace
+        new_char = None
     else:
-        new_letter = chr(key & 0xFF)
-    return new_letter
+        new_char = chr(key & 0xFF)
+    return new_char
 
 
 def main(argv):
