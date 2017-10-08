@@ -86,6 +86,8 @@ def main(argv):
             if len(xs) == 0 or count[0] >= n:
                 return None
             count[0] += 1
+            # TODO: do this without a random choice
+            # easier to annotate characters latter if in order
             return np.random.choice(range(len(xs)), 1)[0]
         return select
 
@@ -187,7 +189,7 @@ def main(argv):
         print()
 
         preds_verified = verify_predictions(
-            preds, build_select(20), annotate.annotate_letter_gaps)
+            preds, build_select(5), annotate.annotate_letter_gaps)
 
     elif verify_type == "character":
 

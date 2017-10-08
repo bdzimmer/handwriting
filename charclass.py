@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 
-Experimentation with more complex methods of interactive character annotation.
+More complex methods of manual character annotation.
 
 """
 
@@ -16,10 +16,12 @@ import numpy as np
 import util
 
 
-def _pad_char_bmp(char_bmp, width, height):
+def pad_char_bmp(char_bmp, width, height):
     """pad char bitmap in a larger bitmap"""
 
-    char_bmp = char_bmp[32:, :]
+    start_row = 16
+
+    char_bmp = char_bmp[start_row:, :]
 
     new_bmp = np.ones((height, width, 3), dtype=np.uint8) * 255
 
@@ -31,103 +33,161 @@ def _pad_char_bmp(char_bmp, width, height):
     return new_bmp
 
 
+def label_chars(chars):
+
+    """label and categorize character images with the mouse and keyboard"""
+
+    # TODO: optionally show the word image (second element of data tuple)
+
+    # assumes the first part of the data tuples are bitmaps already padded to
+    # the same size
+
+    if len(chars) == 0:
+        return [], []
+
+    chars_working = [(x, False) for x in chars]
+    chars_done = []
+
+    new_char = ["Z"]
+    idx = [0]
+    type_mode = False
+
+    # assumes the
+
+    patch_width = chars[0].data[0].shape[1]
+    patch_height = chars[0].data[0].shape[0]
+
+    blank_patch = np.zeros((patch_width, patch_height, 3), dtype=np.uint8)
+
+    def on_mouse(event, x, y, flags, params):
+        """helper"""
+        if event == cv2.EVENT_LBUTTONDOWN:
+            idx[0] = int(y / patch_height) * 16 + int(x / patch_width)
+            if idx[0] < len(chars_working):
+                pred = chars_working[idx[0]][0]
+                pred_new = pred.copy(result=new_char[0], verified=True)
+                chars_working[idx[0]] = (pred_new, True)
+                draw()
+
+    def draw():
+        """helper"""
+        print("total working characters:", len([x for x, y in chars_working if not y]))
+        bmps = [x.data[0] if not y else blank_patch
+                for x, y in chars_working]
+        patch_im = util.patch_image(bmps)
+        cv2.imshow("characters", patch_im)
+
+    cv2.namedWindow("characters", cv2.WINDOW_NORMAL)
+    cv2.setMouseCallback("characters", on_mouse, 0)
+    draw()
+
+    while True:
+        key = cv2.waitKey(60000)
+        if key == 27:
+            break
+        elif key == 9:
+            print("toggling type mode")
+            type_mode = not type_mode
+            continue
+        elif key == 13:
+            chars_done = chars_done + [x for x in chars_working if x[1]]
+            chars_working = [x for x in chars_working if not x[1]]
+            idx[0] = 0
+            draw()
+            continue
+        elif key == 8 and type_mode: # backspace
+            idx[0] = idx[0] - 1
+            if idx[0] < 0:
+                idx[0] = 0
+            chars_working[idx[0]] = (chars_working[idx[0]][0], False)
+            draw()
+            continue
+        elif key == 32: # space
+            new_char[0] = None
+            print("marking invalid")
+        else:
+            new_char[0] = chr(key & 0xFF)
+            print("marking " + new_char[0])
+
+        if type_mode:
+            print(idx[0])
+            pred = chars_working[idx[0]][0]
+            pred_new = pred.copy(result=new_char[0], verified=True)
+            chars_working[idx[0]] = (pred_new, True)
+            idx[0] = idx[0] + 1
+            draw()
+
+    chars_done = chars_done + [x for x in chars_working if x[1]]
+    chars_working = [x for x in chars_working if not x[1]]
+
+    return [x[0] for x in chars_working], [x[0] for x in chars_done]
+
+
 def main():
     """main program"""
 
+    label_mode = False
+
     patch_width = 96
     patch_height = 96
+
+    pad = lambda x: pad_char_bmp(x, patch_width, patch_height)
+
+    def pad_preds(preds):
+        """helper"""
+        return [p.copy(data=(pad(p.data[0]), p.data[1], p.data[0])) for p in preds]
+
+    def unpad_preds(preds):
+        """helper"""
+        return [p.copy(data=(p.data[2], p.data[1])) for p in preds]
 
     input_filename = "20170929_1.png.character.pkl"
     with open(input_filename, "rb") as input_file:
         chars = pickle.load(input_file)
 
-    if True:
+    print("total characters:", len(chars))
 
-        unique_chars = sorted(list(set([x.result for x in chars if x.result is not None])))
-        for cur_char in unique_chars:
-            print(cur_char)
-            cur_preds = [x for x in chars if x.result == cur_char]
-            bmps = [_pad_char_bmp(x.data[0], patch_width, patch_height)
-                    for x in cur_preds]
-            patch_im = util.patch_image(bmps)
-            cv2.namedWindow("characters", cv2.WINDOW_NORMAL)
-            cv2.imshow("characters", patch_im)
-            cv2.waitKey()
-
-    else:
+    if label_mode:
 
         chars_verified = [x for x in chars if x.verified]
         chars_working = [x for x in chars if not x.verified]
-        new_char = ["Z"]
-        idx = [0]
-        type_mode = False
 
-        blank_patch = np.zeros((patch_height, patch_width, 3), dtype=np.uint8)
+        print("verified:", len(chars_verified))
+        print("working:", len(chars_working))
 
-        def on_mouse(event, x, y, flags, params):
-            """helper"""
-            if event == cv2.EVENT_LBUTTONDOWN:
-                idx[0] = int(y / patch_height) * 16 + int(x / patch_width)
-                print(idx)
-                pred = chars_working[idx[0]]
-                pred_new = pred.copy(result=new_char[0], verified=True)
-                chars_working[idx[0]] = pred_new
-                draw()
+        if len(chars_working) > 0:
 
-        def draw():
-            """helper"""
-            print("total unverified characters:", len([x for x in chars_working if not x.verified]))
-            bmps = [_pad_char_bmp(x.data[0], patch_width, patch_height) if not x.verified else blank_patch
-                    for x in chars_working]
-            patch_im = util.patch_image(bmps)
-            cv2.imshow("characters", patch_im)
+            chars_working, chars_done = label_chars(pad_preds(chars_working))
+            res = chars_verified + unpad_preds(chars_working) + unpad_preds(chars_done)
 
-        cv2.namedWindow("characters", cv2.WINDOW_NORMAL)
-        cv2.setMouseCallback("characters", on_mouse, 0)
-        draw()
+            with open(input_filename, "wb") as output_file:
+                pickle.dump(res, output_file)
 
-        while True:
-            key = cv2.waitKey(60000)
-            if key == 27:
-                break
-            elif key == 9:
-                print("toggling type mode")
-                type_mode = not type_mode
-                continue
-            elif key == 13:
-                chars_verified = chars_verified + [x for x in chars_working if x.verified]
-                chars_working = [x for x in chars_working if not x.verified]
-                idx[0] = 0
-                draw()
-                continue
-            elif key == 8 and type_mode: # backspace
-                idx[0] = idx[0] - 1
-                if idx[0] < 0:
-                    idx[0] = 0
-                chars_working[idx[0]] = chars_working[idx[0]].copy(verified=False)
-                draw()
-                continue
-            elif key == 32: # space
-                new_char[0] = None
-                print("marking invalid")
-            else:
-                new_char[0] = chr(key & 0xFF)
-                print("marking " + new_char[0])
+    else:
+        unique_labels = sorted(list(set([x.result for x in chars if x.result is not None])))
+        invalid_chars = [x for x in chars if x.result is None]
+        preds_grouped = [[x for x in chars if x.result == cur_char] for cur_char in unique_labels]
 
-            if type_mode:
-                pred = chars_working[idx[0]]
-                pred_new = pred.copy(result=new_char[0], verified=True)
-                chars_working[idx[0]] = pred_new
-                idx[0] = idx[0] + 1
-                draw()
+        chars_confirmed = []
+        chars_redo = []
 
-        chars_verified = chars_verified + [x for x in chars_working if x.verified]
-        chars_working = [x for x in chars_working if not x.verified]
+        print("mark incorrectly labeled characters")
+        for cur_label, group in zip(unique_labels, preds_grouped):
+            print(cur_label)
 
-        res = chars_verified + chars_working
+            chars_working, chars_done = label_chars(pad_preds(group))
+            chars_confirmed += unpad_preds(chars_working)
+            chars_redo += unpad_preds(chars_done)
 
-        with open(input_filename, "wb") as output_file:
-            pickle.dump(res, output_file)
+        if len(chars_redo) > 0:
+            print("label these characters correctly")
+            chars_redo = pad_preds([x.copy(verified=False) for x in chars_redo])
+            chars_working, chars_done = label_chars(chars_redo)
+
+            res = chars_confirmed + unpad_preds(chars_working) + unpad_preds(chars_done) + invalid_chars
+
+            with open(input_filename, "wb") as output_file:
+                pickle.dump(res, output_file)
 
 
 if __name__ == "__main__":

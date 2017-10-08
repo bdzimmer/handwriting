@@ -6,10 +6,20 @@ General utility module.
 
 # Copyright (c) 2017 Ben Zimmer. All rights reserved.
 
+
+import pickle
+
 import numpy as np
 from sklearn.neighbors import KernelDensity
 
 VISUALIZE = False
+
+
+def load(input_filename):
+    """unpickle a file"""
+    with open(input_filename, "rb") as input_file:
+        res = pickle.load(input_file)
+    return res
 
 
 def patch_image(bmps):
