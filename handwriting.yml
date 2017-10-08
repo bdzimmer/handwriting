@@ -1,0 +1,9 @@
+name: handwriting
+channels:
+    - menpo
+dependencies:
+    - python=3.5
+    - attrs=15.2.0
+    - scikit-learn=0.19.0
+    - opencv3=3.1.0
+    - spyder=3.2.3
