@@ -13,7 +13,7 @@ import unittest
 import cv2
 import numpy as np
 
-import geom
+from handwriting import geom
 
 VISUALIZE = True
 

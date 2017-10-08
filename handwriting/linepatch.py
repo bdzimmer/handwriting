@@ -13,9 +13,7 @@ import numpy as np
 import cv2
 import sklearn.svm
 
-import geom
-import util
-
+from handwriting import geom, util
 
 def main():
 

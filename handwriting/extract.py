@@ -10,7 +10,7 @@ Given annotations, segment images to extract lines, words, and letters.
 import cv2
 import numpy as np
 
-import geom
+from handwriting import geom
 
 
 VISUALIZE = False

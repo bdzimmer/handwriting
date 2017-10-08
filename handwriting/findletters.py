@@ -9,7 +9,7 @@ Find positions of letters in images of words or a single word.
 
 import numpy as np
 
-import util
+from handwriting import util
 
 
 def find_gaps_thresh_peaks(word_image):

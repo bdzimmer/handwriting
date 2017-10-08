@@ -15,7 +15,7 @@ import sys
 import numpy as np
 import cv2
 
-import geom
+from handwriting import geom
 
 
 def annotate_lines(image, org_lines):

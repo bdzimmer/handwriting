@@ -13,7 +13,7 @@ import pickle
 import cv2
 import numpy as np
 
-import util
+from handwriting import util
 
 
 def pad_char_bmp(char_bmp, width, height):

@@ -13,10 +13,8 @@ import cv2
 import numpy as np
 from sklearn.svm import SVC
 
-import charclass
-import util
-
-from prediction import Prediction
+from handwriting import charclass, util
+from handwriting.prediction import Prediction
 
 
 def _fit_svc(feats, labels):

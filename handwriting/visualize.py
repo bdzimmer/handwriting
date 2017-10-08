@@ -9,8 +9,7 @@ Visualize results without verification process.
 
 import pickle
 
-import annotate
-import extract
+from handwriting import annotate, extract
 
 
 def main():

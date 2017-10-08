@@ -16,13 +16,8 @@ import sys
 import cv2
 import numpy as np
 
-import annotate
-import extract
-import findletters
-import findwords
-import findlines
-
-from prediction import Prediction
+from handwriting import annotate, extract, findletters, findwords, findlines
+from handwriting.prediction import Prediction
 
 
 def verify_predictions(
