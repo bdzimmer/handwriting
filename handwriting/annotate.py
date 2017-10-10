@@ -152,7 +152,10 @@ def annotate_word_positions(line_image, word_positions):
 
 def annotate_letter_gaps(word_image, letter_gaps):
 
-    """Interactively annotate gaps between_letters."""
+    """Interactively annotate gaps between letters."""
+
+    if word_image.shape[0] == 0 or word_image.shape[1] == 0:
+        return None
 
     scale_factor = 1.0
 

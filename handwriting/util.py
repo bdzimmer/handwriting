@@ -9,17 +9,39 @@ General utility module.
 
 import pickle
 
+import dill
 import numpy as np
 from sklearn.neighbors import KernelDensity
+
+dill.settings["recurse"] = True
 
 VISUALIZE = False
 
 
 def load(input_filename):
-    """unpickle a file"""
+    """unpickle an object from a file"""
     with open(input_filename, "rb") as input_file:
         res = pickle.load(input_file)
     return res
+
+
+def save(obj, output_filename):
+    """pickle an object to a file"""
+    with open(output_filename, "wb") as output_file:
+        pickle.dump(obj, output_file)
+
+
+def load_dill(input_filename):
+    """undill an object from a file"""
+    with open(input_filename, "rb") as input_file:
+        res = dill.load(input_file)
+    return res
+
+
+def save_dill(obj, output_filename):
+    """dill an object to a file"""
+    with open(output_filename, "wb") as output_file:
+        dill.dump(obj, output_file)
 
 
 def patch_image(bmps):

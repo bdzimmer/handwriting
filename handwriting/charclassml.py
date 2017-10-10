@@ -17,15 +17,48 @@ from handwriting import charclass, util
 from handwriting.prediction import Prediction
 
 
-def _fit_svc(feats, labels):
-    """fit an svm classifier"""
+def train_char_class_svc(data_train, labels_train, data_to_feats):
+    """train an SVC character classifier"""
+
+    feats_train = [data_to_feats(x) for x in data_train]
 
     # TODO: feature selection; hyperparameter tuning with cross validation
 
     svc = SVC(probability=True, verbose=False)
-    svc.fit(feats, labels)
+    svc.fit(feats_train, labels_train)
 
-    return svc
+    print("support vector counts:", svc.n_support_)
+    print("score on training dataset", svc.score(feats_train, labels_train))
+
+    def predict(data_test):
+        """helper"""
+        feats_test = [data_to_feats(x) for x in data_test]
+        return svc.predict(feats_test)
+
+    # TODO: write a general score function in the future
+    def score(data_test, labels_test):
+        """helper"""
+        feats_test = [data_to_feats(x) for x in data_test]
+        return svc.score(feats_test, labels_test)
+
+    return predict, score
+
+
+def pad_char_bmp(char_bmp, width, height):
+    """pad char bitmap in a larger bitmap"""
+
+    start_row = 16
+
+    char_bmp = char_bmp[start_row:, :]
+
+    new_bmp = np.ones((height, width, 3), dtype=np.uint8) * 255
+
+    xoff = int((width - char_bmp.shape[1]) / 2)
+    yoff = int((height - char_bmp.shape[0]) / 2)
+
+    new_bmp[yoff:(yoff + char_bmp.shape[0]), xoff:(xoff + char_bmp.shape[1])] = char_bmp
+
+    return new_bmp
 
 
 def _filter_cc(image):
@@ -148,10 +181,13 @@ def _transform_random(image):
          [0, 0, 1]])
 
     tmat = np.dot(trans_from_center, np.dot(trans_random, trans_to_center))[0:2, :]
-    image_new = cv2.warpAffine(image, tmat, image.shape[0:2], borderValue=(255, 255, 255))
+    image_new = cv2.warpAffine(
+        image, tmat,
+        (image.shape[1], image.shape[0]),
+        borderValue=(255, 255, 255))
 
     # cv2.imshow("image", image)
-    # cv2.imshow("new_image", new_image)
+    # cv2.imshow("new_image", image_new)
     # cv2.waitKey()
 
     return image_new
@@ -163,67 +199,89 @@ def main():
     patch_width = 96
     patch_height = 96
 
-    pad = lambda x: charclass.pad_char_bmp(x, patch_width, patch_height)
+    pad_image = lambda x: pad_char_bmp(x, patch_width, patch_height)
+    prep_image = lambda x: _align(_filter_cc(pad_image(x)))
+    data_to_feats = lambda x: _downsample(prep_image(x[0]), 0.3) # 0.4
 
-    train_filename = "20170929_2.png.character.pkl"
-    test_filename = "20170929_1.png.character.pkl"
+    train_filenames = ["20170929_2.png.character.pkl", "20170929_3.png.character.pkl"]
+    test_filenames = ["20170929_1.png.character.pkl"]
 
-    data_to_feats = lambda x: _downsample(x[0], 0.4)
-
-    def load_samples(filename):
+    def load_samples(filenames):
         """load  valid character samples from file, converting the data field
         to a padded bitmap"""
-        samples_valid = [x for x in util.load(filename)
+        samples = [y for x in filenames for y in util.load(x)]
+        samples_valid = [x for x in samples
                          if x.result is not None and x.verified]
         labels = [x.result for x in samples_valid]
-        data_padded = [(_align(_filter_cc(pad(x.data[0]))), x.data[1], x.data[0])
-                       for x in samples_valid]
-        return data_padded, labels
+        data = [x.data for x in samples_valid]
+        return data, labels
 
     print("loading and balancing datasets")
 
     def perturb_func(data):
         """helper"""
         im_new = _transform_random(data[0])
-        return (im_new, data[1], data[2])
+        return (im_new, data[1])
 
-    data_train_unbalanced, labels_train_unbalanced = load_samples(train_filename)
+    # load training set
+
+    data_train_unbalanced, labels_train_unbalanced = load_samples(train_filenames)
+
+    # eliminate groups from training and test
+    # where we have less than a certain number of samples
+
+    train_gr = dict(_group_by_label(
+        data_train_unbalanced, labels_train_unbalanced))
+    keep_labels = [x for x, y in train_gr.items() if len(y) >= 2]
+    print("keep labels:", sorted(keep_labels))
+
+    train_grf = {x: y for x, y in train_gr.items() if x in keep_labels}
+    data_train_unbalanced, labels_train_unbalanced = zip(*[
+        (y, x[0]) for x in train_grf.items() for y in x[1]])
+
+    # balance classes in training set
+
     data_train, labels_train = _balance(
         data_train_unbalanced, labels_train_unbalanced, 0.5, perturb_func)
 
-    feats_train = [data_to_feats(x) for x in data_train]
+    # load test set
 
-    data_test, labels_test = load_samples(test_filename)
-    feats_test = [data_to_feats(x) for x in data_test]
+    data_test, labels_test = load_samples(test_filenames)
+
+    test_gr = dict(_group_by_label(data_test, labels_test))
+    test_grf = {x: y for x, y in test_gr.items() if x in keep_labels}
+    data_test, labels_test = zip(*[
+        (y, x[0]) for x in test_grf.items() for y in x[1]])
 
     print("done")
 
-    print("training size:", len(feats_train))
-    print("test size:", len(feats_test))
+    print("training size:", len(data_train))
+    print("test size:", len(data_test))
 
     print(
         "training group sizes:",
         [(x[0], len(x[1]))
-         for x in _group_by_label(feats_train, labels_train)])
+         for x in _group_by_label(data_train, labels_train)])
 
     print(
         "test group sizes:",
         [(x[0], len(x[1]))
-         for x in _group_by_label(feats_test, labels_test)])
+         for x in _group_by_label(data_test, labels_test)])
 
     print("fitting model")
 
-    svc = _fit_svc(feats_train, labels_train)
+    svc_predict, svc_score = train_char_class_svc(
+        data_train, labels_train, data_to_feats)
 
     print("done")
 
-    print("support vector counts:", svc.n_support_)
-    print("score on training dataset", svc.score(feats_train, labels_train))
-    print("score on test dataset", svc.score(feats_test, labels_test))
+    print("score on test dataset", svc_score(data_test, labels_test))
 
     # TODO: visualize ROC curves and confusion matrix
 
-    labels_test_pred = svc.predict(feats_test)
+    labels_test_pred = svc_predict(data_test)
+
+    util.save_dill((svc_predict, svc_score), "char_class_svc.pkl")
 
     chars_confirmed = []
     chars_redo = []
@@ -231,7 +289,8 @@ def main():
     # show results
     for cur_label, group in _group_by_label(data_test, labels_test_pred):
         print(cur_label)
-        group_pred = [Prediction(x, cur_label, 0.0, False) for x in group]
+        group_prepped = [(prep_image(x[0]), x[1]) for x in group]
+        group_pred = [Prediction(x, cur_label, 0.0, False) for x in group_prepped]
         chars_working, chars_done = charclass.label_chars(group_pred)
         chars_confirmed += chars_working
         chars_redo += chars_done

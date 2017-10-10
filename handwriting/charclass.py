@@ -13,24 +13,7 @@ import pickle
 import cv2
 import numpy as np
 
-from handwriting import util
-
-
-def pad_char_bmp(char_bmp, width, height):
-    """pad char bitmap in a larger bitmap"""
-
-    start_row = 16
-
-    char_bmp = char_bmp[start_row:, :]
-
-    new_bmp = np.ones((height, width, 3), dtype=np.uint8) * 255
-
-    xoff = int((width - char_bmp.shape[1]) / 2)
-    yoff = int((height - char_bmp.shape[0]) / 2)
-
-    new_bmp[yoff:(yoff + char_bmp.shape[0]), xoff:(xoff + char_bmp.shape[1])] = char_bmp
-
-    return new_bmp
+from handwriting import charclassml, util
 
 
 def label_chars(chars):
@@ -115,6 +98,8 @@ def label_chars(chars):
             pred_new = pred.copy(result=new_char[0], verified=True)
             chars_working[idx[0]] = (pred_new, True)
             idx[0] = idx[0] + 1
+            if idx[0] >= len(chars_working):
+                idx[0] = len(chars_working) - 1
             draw()
 
     chars_done = chars_done + [x for x in chars_working if x[1]]
@@ -127,11 +112,12 @@ def main():
     """main program"""
 
     label_mode = False
+    label_ml = True
 
     patch_width = 96
     patch_height = 96
 
-    pad = lambda x: pad_char_bmp(x, patch_width, patch_height)
+    pad = lambda x: charclassml.pad_char_bmp(x, patch_width, patch_height)
 
     def pad_preds(preds):
         """helper"""
@@ -141,7 +127,7 @@ def main():
         """helper"""
         return [p.copy(data=(p.data[2], p.data[1])) for p in preds]
 
-    input_filename = "20170929_1.png.character.pkl"
+    input_filename = "20170929_3.png.character.pkl"
     with open(input_filename, "rb") as input_file:
         chars = pickle.load(input_file)
 
@@ -164,6 +150,14 @@ def main():
                 pickle.dump(res, output_file)
 
     else:
+
+        if label_ml:
+            # TODO: do this only for unverified chars
+            print("generating labels using ML")
+            svc_predict, _ = util.load_dill("char_class_svc.pkl")
+            labels = svc_predict([x.data for x in chars])
+            chars = [x.copy(result=y) for x, y in zip(chars, labels)]
+
         unique_labels = sorted(list(set([x.result for x in chars if x.result is not None])))
         invalid_chars = [x for x in chars if x.result is None]
         preds_grouped = [[x for x in chars if x.result == cur_char] for cur_char in unique_labels]

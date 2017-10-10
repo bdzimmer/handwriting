@@ -184,7 +184,7 @@ def main(argv):
         print()
 
         preds_verified = verify_predictions(
-            preds, build_select(5), annotate.annotate_letter_gaps)
+            preds, build_select(50), annotate.annotate_letter_gaps)
 
     elif verify_type == "character":
 
