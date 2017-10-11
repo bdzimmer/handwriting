@@ -7,38 +7,88 @@ Machine learning for character classification.
 # Copyright (c) 2017 Ben Zimmer. All rights reserved.
 
 
+import itertools
 import random
 
 import cv2
 import numpy as np
+from sklearn.decomposition import PCA
+from sklearn.model_selection import KFold
 from sklearn.svm import SVC
 
 from handwriting import charclass, util
 from handwriting.prediction import Prediction
 
 
-def train_char_class_svc(data_train, labels_train, data_to_feats):
+def build_feat_selection_pca(feats, n_components):
+    """select features by PCA dimensionality reduction"""
+
+    pca = PCA(n_components)
+    pca.fit(feats)
+    print("done")
+    print("PCA components:", pca.n_components_, "/", pca.n_features_)
+    print("PCA variance explained:", np.sum(pca.explained_variance_ratio_))
+
+    def select(feats_test):
+        """do the feature selection"""
+        return pca.transform(feats_test)
+
+    return select
+
+
+def train_char_class_svc(
+        data, labels, data_to_feats, build_feat_selection, n_splits):
+
     """train an SVC character classifier"""
 
-    feats_train = [data_to_feats(x) for x in data_train]
+    # feature extraction
+    feats = [data_to_feats(x) for x in data]
 
-    # TODO: feature selection; hyperparameter tuning with cross validation
+    # feature selection
+    feat_selection = build_feat_selection(feats)
+    feats = feat_selection(feats)
 
-    svc = SVC(probability=True, verbose=False)
-    svc.fit(feats_train, labels_train)
+    # train SVC, tuning hyperparameters with k-fold cross validation
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=1)
+    models = []
+    hyps = itertools.product(
+        np.logspace(1, 2, 4),   # np.logspace(0, 2, 3)
+        np.logspace(-2, 0, 5))  # np.logspace(-3, 1, 5)
 
-    print("support vector counts:", svc.n_support_)
-    print("score on training dataset", svc.score(feats_train, labels_train))
+    for c, gamma in hyps:
+        for idxs_train, idxs_test in kf.split(feats):
+
+            feats_train = [feats[idx] for idx in idxs_train]
+            labels_train = [labels[idx] for idx in idxs_train]
+            feats_test = [feats[idx] for idx in idxs_test]
+            labels_test = [labels[idx] for idx in idxs_test]
+
+            svc = SVC(C=c, gamma=gamma, probability=True)
+            svc.fit(feats_train, labels_train)
+            svc_score = svc.score(feats_test, labels_test)
+            models.append((svc_score, (c, gamma)))
+            print(
+                np.round(c, 3), np.round(gamma, 3), ":",
+                np.round(svc_score, 3),
+                np.round(np.sum(svc.n_support_) / len(idxs_train), 3))
+
+    # fit a model on all training data using the best parameters
+    # TODO: somehow look at performance across folds to choose
+    c, gamma = models[np.argmax([x[0] for x in models])][1]
+    print("best hyperparameters:", c, gamma)
+    svc = SVC(C=c, gamma=gamma, probability=True)
+    svc.fit(feats, labels)
+    print("support vector counts:", list(zip(svc.classes_, svc.n_support_)))
 
     def predict(data_test):
         """helper"""
-        feats_test = [data_to_feats(x) for x in data_test]
+        feats_test = feat_selection([data_to_feats(x) for x in data_test])
         return svc.predict(feats_test)
 
     # TODO: write a general score function in the future
     def score(data_test, labels_test):
         """helper"""
-        feats_test = [data_to_feats(x) for x in data_test]
+        feats_test = feat_selection([data_to_feats(x) for x in data_test])
         return svc.score(feats_test, labels_test)
 
     return predict, score
@@ -50,7 +100,6 @@ def pad_char_bmp(char_bmp, width, height):
     start_row = 16
 
     char_bmp = char_bmp[start_row:, :]
-
     new_bmp = np.ones((height, width, 3), dtype=np.uint8) * 255
 
     xoff = int((width - char_bmp.shape[1]) / 2)
@@ -66,7 +115,6 @@ def _filter_cc(image):
     everything except the second largest"""
 
     # TODO: better way to select relevant components
-
     comp_filt = np.copy(image)
     gray = 255 - np.array(np.sum(image, axis=2) / 3.0, dtype=np.uint8)
     _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -201,7 +249,16 @@ def main():
 
     pad_image = lambda x: pad_char_bmp(x, patch_width, patch_height)
     prep_image = lambda x: _align(_filter_cc(pad_image(x)))
-    data_to_feats = lambda x: _downsample(prep_image(x[0]), 0.3) # 0.4
+    # data_to_feats = lambda x: _downsample(prep_image(x[0]), 0.25) # 0.4
+
+    def data_to_feats(data):
+        """helper"""
+        p_img = prep_image(data[0])
+        return np.hstack((
+            _downsample(p_img, 0.4),
+            _downsample(p_img, 0.2),
+            _downsample(p_img, 0.1),
+            _downsample(p_img, 0.05)))
 
     train_filenames = ["20170929_2.png.character.pkl", "20170929_3.png.character.pkl"]
     test_filenames = ["20170929_1.png.character.pkl"]
@@ -212,8 +269,8 @@ def main():
         samples = [y for x in filenames for y in util.load(x)]
         samples_valid = [x for x in samples
                          if x.result is not None and x.verified]
-        labels = [x.result for x in samples_valid]
         data = [x.data for x in samples_valid]
+        labels = [x.result for x in samples_valid]
         return data, labels
 
     print("loading and balancing datasets")
@@ -224,7 +281,6 @@ def main():
         return (im_new, data[1])
 
     # load training set
-
     data_train_unbalanced, labels_train_unbalanced = load_samples(train_filenames)
 
     # eliminate groups from training and test
@@ -240,12 +296,10 @@ def main():
         (y, x[0]) for x in train_grf.items() for y in x[1]])
 
     # balance classes in training set
-
     data_train, labels_train = _balance(
         data_train_unbalanced, labels_train_unbalanced, 0.5, perturb_func)
 
     # load test set
-
     data_test, labels_test = load_samples(test_filenames)
 
     test_gr = dict(_group_by_label(data_test, labels_test))
@@ -271,18 +325,16 @@ def main():
     print("fitting model")
 
     svc_predict, svc_score = train_char_class_svc(
-        data_train, labels_train, data_to_feats)
+        data_train, labels_train, data_to_feats,
+        lambda x: build_feat_selection_pca(x, 0.90), 4)
 
     print("done")
 
     print("score on test dataset", svc_score(data_test, labels_test))
-
     # TODO: visualize ROC curves and confusion matrix
-
-    labels_test_pred = svc_predict(data_test)
-
     util.save_dill((svc_predict, svc_score), "char_class_svc.pkl")
 
+    labels_test_pred = svc_predict(data_test)
     chars_confirmed = []
     chars_redo = []
 
