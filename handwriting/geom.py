@@ -86,11 +86,17 @@ def point_to_line(x0, y0, x1, y1, x2, y2):
 def line_segment_within_image(line, shape):
     """given a line or segment, find a new line that lies on top of it where
     the points are on the edges of the image"""
+
+    side_left = (0, shape[0] - 1, 0, 0)
+    side_top = (0, 0, shape[1] - 1, 0)
+    side_right = (shape[1] - 1, 0, shape[1] - 1, shape[0] - 1)
+    side_bottom = (shape[1] - 1, shape[0] - 1, 0, shape[0] - 1)
+
     possible_intersections = [
-        line_line_intersection(line, (0, shape[0] - 1, 0, 0), True, False), # left side
-        line_line_intersection(line, (0, 0, shape[1] - 1, 0), True, False), # top
-        line_line_intersection(line, (shape[1] - 1, 0, shape[1] - 1, shape[0] - 1), True, False), # right side
-        line_line_intersection(line, (shape[1] - 1, shape[0] - 1, 0, shape[0] - 1), True, False)] # bottom
+        line_line_intersection(line, side_left, True, False),
+        line_line_intersection(line, side_top, True, False),
+        line_line_intersection(line, side_right, True, False),
+        line_line_intersection(line, side_bottom, True, False)]
     pts = [x for x in possible_intersections if x is not None]
     return (pts[0][0], pts[0][1], pts[1][0], pts[1][1])
 

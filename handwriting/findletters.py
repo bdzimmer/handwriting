@@ -39,11 +39,11 @@ def find_gaps_thresh_peaks(word_image):
         data_range,
         peak_sigma)
 
-    print("peaks length:", len(peak_idxs))
+    # print("peaks length:", len(peak_idxs))
     peak_thresh = np.percentile(peak_values, peak_percentile)
 
     peak_idxs_filtered = [x for x, y in zip(peak_idxs, peak_values)
                           if y >= peak_thresh]
 
-    print("filtered peaks length:", len(peak_idxs_filtered))
+    # print("filtered peaks length:", len(peak_idxs_filtered))
     return peak_idxs_filtered

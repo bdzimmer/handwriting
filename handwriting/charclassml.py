@@ -19,6 +19,8 @@ from sklearn.svm import SVC
 from handwriting import charclass, util
 from handwriting.prediction import Prediction
 
+VISUALIZE = False
+
 
 def build_feat_selection_pca(feats, n_components):
     """select features by PCA dimensionality reduction"""
@@ -99,9 +101,9 @@ def pad_char_bmp(char_bmp, width, height):
 
     start_row = 16
 
-    char_bmp = char_bmp[start_row:, :]
     new_bmp = np.ones((height, width, 3), dtype=np.uint8) * 255
 
+    char_bmp = char_bmp[start_row:, :]
     xoff = int((width - char_bmp.shape[1]) / 2)
     yoff = int((height - char_bmp.shape[0]) / 2)
 
@@ -269,6 +271,8 @@ def main():
         samples = [y for x in filenames for y in util.load(x)]
         samples_valid = [x for x in samples
                          if x.result is not None and x.verified]
+        samples_valid = [(x.copy(result="`") if x.result is None else x)
+                         for x in samples]
         data = [x.data for x in samples_valid]
         labels = [x.result for x in samples_valid]
         return data, labels
@@ -284,11 +288,14 @@ def main():
     data_train_unbalanced, labels_train_unbalanced = load_samples(train_filenames)
 
     # eliminate groups from training and test
-    # where we have less than a certain number of samples
+    # where we have less than a certain number of samples or they aren't
+    # characters that we currently want to train on
+    remove_labels = ["\"", "!", "/"]
 
     train_gr = dict(_group_by_label(
         data_train_unbalanced, labels_train_unbalanced))
-    keep_labels = [x for x, y in train_gr.items() if len(y) >= 2]
+    keep_labels = [x for x, y in train_gr.items()
+                   if len(y) >= 2 and x not in remove_labels]
     print("keep labels:", sorted(keep_labels))
 
     train_grf = {x: y for x, y in train_gr.items() if x in keep_labels}
@@ -296,8 +303,11 @@ def main():
         (y, x[0]) for x in train_grf.items() for y in x[1]])
 
     # balance classes in training set
+    balance_factor = 66
+    # balance_factor = 150
     data_train, labels_train = _balance(
-        data_train_unbalanced, labels_train_unbalanced, 0.5, perturb_func)
+        data_train_unbalanced, labels_train_unbalanced,
+        balance_factor, perturb_func)
 
     # load test set
     data_test, labels_test = load_samples(test_filenames)
@@ -334,18 +344,19 @@ def main():
     # TODO: visualize ROC curves and confusion matrix
     util.save_dill((svc_predict, svc_score), "char_class_svc.pkl")
 
-    labels_test_pred = svc_predict(data_test)
-    chars_confirmed = []
-    chars_redo = []
+    if VISUALIZE:
+        labels_test_pred = svc_predict(data_test)
+        chars_confirmed = []
+        chars_redo = []
 
-    # show results
-    for cur_label, group in _group_by_label(data_test, labels_test_pred):
-        print(cur_label)
-        group_prepped = [(prep_image(x[0]), x[1]) for x in group]
-        group_pred = [Prediction(x, cur_label, 0.0, False) for x in group_prepped]
-        chars_working, chars_done = charclass.label_chars(group_pred)
-        chars_confirmed += chars_working
-        chars_redo += chars_done
+        # show results
+        for cur_label, group in _group_by_label(data_test, labels_test_pred):
+            print(cur_label)
+            group_prepped = [(prep_image(x[0]), x[1]) for x in group]
+            group_pred = [Prediction(x, cur_label, 0.0, False) for x in group_prepped]
+            chars_working, chars_done = charclass.label_chars(group_pred)
+            chars_confirmed += chars_working
+            chars_redo += chars_done
 
 
 if __name__ == "__main__":

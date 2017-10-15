@@ -76,7 +76,9 @@ def find(image):
     for line in final_lines:
         lf = geom.build_line_func(*[int(x) for x in line])
         cv2.line(disp_im, lf(0), lf(l_width), (0, 255, 0), 4)
-    _show(disp_im, "result", 1)
+
+    if VISUALIZE:
+        _show(disp_im, "result", 1)
 
     return edge_lines, final_lines
 
@@ -145,18 +147,23 @@ def _lines_in_edge_image(edge_image):
         # theta_mean = np.mean(lines_polar[:, 1])
         # print("initial theta mean:", theta_mean)
 
-        th_range = np.arange(
-            np.min(lines_polar[:, 1]) - 0.04,
-            np.max(lines_polar[:, 1]) + 0.04,
-            theta_sigma)
-        peak_idxs, peak_values = util.find_peak_idxs(lines_polar[:, 1], th_range, 0.1)
-        theta_idx = peak_idxs[np.argmax(peak_values)]
-        theta_mean = th_range[theta_idx]
+        if True:
+            # assumes that the paper is near portrait orientation
+            theta_mean = 0.0
+        else:
+            # doesn't make assumptions about paper orientation, but not
+            # sure if this really works
+            th_range = np.arange(
+                np.min(lines_polar[:, 1]) - 0.04,
+                np.max(lines_polar[:, 1]) + 0.04,
+                theta_sigma)
+            peak_idxs, peak_values = util.find_peak_idxs(lines_polar[:, 1], th_range, 0.1)
+            theta_idx = peak_idxs[np.argmax(peak_values)]
+            theta_mean = th_range[theta_idx]
 
         print("theta mean:", theta_mean * 180 / np.pi, "degrees")
 
         keep_idxs = np.abs(lines_polar[:, 1] - theta_mean) < np.pi / 100.0
-
         lines = lines[keep_idxs, :]
         lines_polar = lines_polar[keep_idxs, :]
 
@@ -183,20 +190,54 @@ def _lines_in_edge_image(edge_image):
 
     theta_mean = np.mean(lines_polar[:, 1])
 
+    print("theta mean before adjustment:", theta_mean)
+
+    # TODO: not sure if this logic is exactly what I want
+    if theta_mean > 0.5 * np.pi:
+        theta_mean = theta_mean - np.pi
+    if theta_mean < -0.75 * np.pi:
+        theta_mean = theta_mean + np.pi
+
     print("theta mean:", theta_mean)
 
     r_range = np.arange(0, int(np.max(lines_polar[:, 0])))
-    util.VISUALIZE = True
+    # util.VISUALIZE = True
     peak_idxs, _ = util.find_peak_idxs(lines_polar[:, 0], r_range, r_sigma)
 
     print("final line count:", len(peak_idxs))
 
     final_lines = []
 
-    for peak_idx in peak_idxs:
-        r = r_range[peak_idx]
+    rs = [r_range[idx] for idx in peak_idxs]
+
+    if True and len(rs) > 1:
+
+        # repeatedly remove lines where the diff before
+        # it is less than 0.75 of the mean diff
+        # this doesn't work so great, since it can remove valid
+        # lines if there is an extra line after an empty space
+
+        rs_filt = [x for x in rs]
+        while True:
+            rs_diff = np.diff(rs_filt)
+            rs_diff_mean = np.mean(rs_diff)
+            # print(rs_diff)
+            unchanged = True
+            for idx, dval in enumerate(rs_diff):
+                if dval < 0.75 * rs_diff_mean:
+                    # print(idx + 1, dval, 0.75 * rs_diff_mean)
+                    rs_filt.pop(idx + 1)
+                    unchanged = False
+                    break
+            if unchanged:
+                break
+    else:
+        rs_filt = rs
+
+    for r in rs_filt:
+        pts = geom.polar_to_points(r, theta_mean)
         final_line = geom.line_segment_within_image(
-            geom.polar_to_points(r, theta_mean), edge_image.shape)
+            pts, edge_image.shape)
         final_lines.append([int(x) for x in final_line])
 
     return lines, final_lines
