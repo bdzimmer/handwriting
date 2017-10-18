@@ -155,6 +155,8 @@ def main(argv):
 
     elif verify_type == "lgap":
 
+        # TODO: update with new character segmentation method
+
         # verify letter gaps
 
         if not preds_loaded:

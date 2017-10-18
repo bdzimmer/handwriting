@@ -12,24 +12,51 @@ import attr
 import cv2
 import numpy as np
 
-from handwriting import findlines, findwords, findletters
-from handwriting import extract, util
-
+from handwriting import findlines, findwords, findletters, extract, util
 
 VISUALIZE = True
 
+
+# note that this is not "frozen"
+# experimenting with a mutable tree structure
 @attr.s
-class Sample(object):
+class Sample:
     """struct for holding data, prediction results, and source data"""
-    parent = attr.ib
+    parent = attr.ib()
     data = attr.ib()
     result = attr.ib()
     trust = attr.ib()
     verified = attr.ib()
+    modified = attr.ib()
 
     def copy(self, **changes):
         """copy self with changes"""
         return attr.assoc(self, **changes)
+
+
+def line_sample_analysis_image(line_im_sample):
+    """Generate a line analysis image from the appropriate Sample"""
+
+    line_im = line_im_sample.data
+
+    word_poss = [x.data for x in line_im_sample.result]
+    word_ims = [x.result.data for x in line_im_sample.result]
+
+    words_cposs = [y.data for x in line_im_sample.result
+                   for y in x.result.result]
+
+    words_char_ims = [[y.result.data for y in x.result.result]
+                      for x in line_im_sample.result]
+
+    words_chars = [[y.result.result for y in x.result.result]
+                   for x in line_im_sample.result]
+
+    im = line_analysis_image(
+        line_im,
+        word_poss, word_ims,
+        words_cposs, words_char_ims,
+        words_chars)
+    return im
 
 
 
@@ -49,6 +76,8 @@ def line_analysis_image(
     # words_char_ims - for each word, a list of char images
 
     # words_chars    - for each word, a list of classified character
+
+    # corrently wposs and words_cposs are not used in the image
 
     line_height = line_im.shape[0]
 
@@ -87,6 +116,7 @@ def line_analysis_image(
         all_chars_im.shape[1]])
 
     def pad(im):
+        """helper"""
         padded_im = np.zeros((line_height, max_width, 3), dtype=np.uint8)
         start_x = int(0.5 * (max_width - im.shape[1]))
         padded_im[:, start_x:(start_x + im.shape[1]), :] = im
@@ -106,13 +136,70 @@ def line_analysis_image(
     return res
 
 
-def char_analysis_image():
+def char_sample_analysis_image():
     """illustrate the parent data of a character classification"""
 
     # everything required to generate this image should eventually be
     # available via a character sample and should be stored in the pickle file.
 
-    pass
+    # TODO: implement char sample analysis image
+
+    return None
+
+
+def build_process(
+        find_lines, extract_line,
+        find_word_poss, extract_word,
+        find_char_poss, extract_char,
+        classify_char):
+
+    """build full recognition process"""
+
+    def process_image_tree(image):
+        """process an image"""
+        image_sample = Sample(None, image, [], 0.0, False, False)
+
+        for line_pos in find_lines(image):
+            line_im = extract_line(line_pos, image)
+
+            line_pos_sample = Sample(line_im, line_pos, None, 0.0, False, False)
+            image_sample.result.append(line_pos_sample)
+            line_im_sample = process_line_tree(line_im)
+            line_pos_sample.result = line_im_sample
+
+            print(".", end="", flush=True)
+        print()
+        return image_sample
+
+    def process_line_tree(line_im):
+        """process a line"""
+        line_im_sample = Sample(None, line_im, [], 0.0, False, False)
+
+        for word_pos in find_word_poss(line_im):
+            word_im = extract_word(word_pos, line_im)
+
+            word_pos_sample = Sample(line_im_sample, word_pos, None, 0.0, False, False)
+            line_im_sample.result.append(word_pos_sample)
+            word_im_sample = process_word_tree(word_im)
+            word_pos_sample.result = word_im_sample
+        return line_im_sample
+
+    def process_word_tree(word_im):
+        """process a word"""
+        word_im_sample = Sample(None, word_im, [], 0.0, False, False)
+
+        for char_pos in find_char_poss(word_im):
+            char_im = extract_char(char_pos, word_im)
+            char = classify_char(char_im)
+
+            char_pos_sample = Sample(word_im_sample, char_pos, None, 0.0, False, False)
+            word_im_sample.result.append(char_pos_sample)
+            char_im_sample = Sample(char_pos_sample, char_im, None, 0.0, False, False)
+            char_pos_sample.result = char_im_sample
+            char_im_sample.result = char
+        return word_im_sample
+
+    return process_image_tree
 
 
 def main(argv):
@@ -128,7 +215,7 @@ def main(argv):
     print("input file name:", input_filename)
     image = cv2.imread(input_filename)
 
-    # process functions
+    # build the individual process functions
     px_above, px_below = 72, 32
 
     find_lines = lambda im: findlines.find(im)[1]
@@ -144,73 +231,35 @@ def main(argv):
 
     print("loading models...", end="")
     classify_characters, _ = util.load_dill("char_class_svc.pkl")
+    classify_char = lambda x: classify_characters([(x,)])[0]
     print("done")
 
-    # run the process on each line separately
+    # put the pieces together
+    process = build_process(
+        find_lines, extract_line,
+        find_word_poss, extract_word,
+        find_char_poss, extract_char,
+        classify_char)
 
-    print("finding and extracting lines...")
-    line_ims = [extract_line(line_pos, image)
-                for line_pos in find_lines(image)]
-    print("done")
+    # do the processing
+    image_sample = process(image)
 
-    def process_line(line_im):
-        """process a line"""
-
-        word_poss = find_word_poss(line_im)
-        word_ims = [extract_word(word_pos, line_im)
-                    for word_pos in word_poss]
-
-        if len(word_ims) == 0:
-            return ""
-
-        word_ims_height = [x.shape[0] for x in word_ims]
-        word_ims_width = [x.shape[1] for x in word_ims]
-
-        if False:
-            print(
-                "width:",
-                min(word_ims_width), max(word_ims_width))
-            print(
-                "height:",
-                min(word_ims_height), max(word_ims_height))
-
-        words_cposs = [find_char_poss(word_im) for word_im in word_ims]
-
-        words_char_ims = [[extract_char(cpos, y) for cpos in x]
-                          for x, y in zip(words_cposs, word_ims)]
-
-        if False:
-            for char_ims in words_char_ims:
-                for char_im in char_ims:
-                    print(char_im.shape[1], ",", end="")
-                print("_", end="")
-            print()
-
-        chars = [classify_characters([(x,) for x in char_ims])
-                 for char_ims in words_char_ims
-                 if len(char_ims) > 0]
-
-        result = " ".join(["".join(x) for x in chars])
-        print(".", end="", flush=True)
-
-        if VISUALIZE:
-            im = line_analysis_image(
-                line_im,
-                word_poss, word_ims,
-                words_cposs, words_char_ims,
-                chars)
+    if VISUALIZE:
+        for line_pos in image_sample.result:
+            im = line_sample_analysis_image(line_pos.result)
             cv2.namedWindow("line analysis", cv2.WINDOW_NORMAL)
             cv2.imshow("line analysis", im)
             cv2.waitKey()
 
-        return result
-
+    def join_words(words):
+        """helper"""
+        return " ".join(["".join(x) for x in words])
     chars_remove = "`"
-
-    line_results = [
-        process_line(line_im).translate({ord(c): None for c in chars_remove})
-        for line_im in line_ims
-        if line_im.shape[0] > 0]
+    line_results = [join_words([[char_pos.result.result for char_pos in word_pos.result.result]
+                     for word_pos in line_pos.result.result])
+                    for line_pos in image_sample.result]
+    line_results = [x.translate({ord(c): None for c in chars_remove})
+                    for x in line_results]
 
     print("\n\n")
     for line_result in line_results:

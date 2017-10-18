@@ -99,6 +99,8 @@ def train_char_class_svc(
 def pad_char_bmp(char_bmp, width, height):
     """pad char bitmap in a larger bitmap"""
 
+    # TODO: this needs to work if char_bmp is larger than the new size
+
     start_row = 16
 
     new_bmp = np.ones((height, width, 3), dtype=np.uint8) * 255
