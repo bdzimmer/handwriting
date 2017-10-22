@@ -102,7 +102,7 @@ def line_analysis_image(
         char_im = np.zeros((line_height, 20, 3), dtype=np.uint8)
         cv2.putText(
             char_im, ch, (1, int(line_height / 2)),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 1, cv2.LINE_AA)
+            cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 0), 2, cv2.LINE_AA)
         return char_im
 
     all_chars_im = combine_ims(
@@ -147,78 +147,14 @@ def char_sample_analysis_image():
     return None
 
 
-def build_process(
-        find_lines, extract_line,
-        find_word_poss, extract_word,
-        find_char_poss, extract_char,
-        classify_char):
+def current_process():
 
-    """build full recognition process"""
-
-    def process_image_tree(image):
-        """process an image"""
-        image_sample = Sample(None, image, [], 0.0, False, False)
-
-        for line_pos in find_lines(image):
-            line_im = extract_line(line_pos, image)
-
-            line_pos_sample = Sample(line_im, line_pos, None, 0.0, False, False)
-            image_sample.result.append(line_pos_sample)
-            line_im_sample = process_line_tree(line_im)
-            line_pos_sample.result = line_im_sample
-
-            print(".", end="", flush=True)
-        print()
-        return image_sample
-
-    def process_line_tree(line_im):
-        """process a line"""
-        line_im_sample = Sample(None, line_im, [], 0.0, False, False)
-
-        for word_pos in find_word_poss(line_im):
-            word_im = extract_word(word_pos, line_im)
-
-            word_pos_sample = Sample(line_im_sample, word_pos, None, 0.0, False, False)
-            line_im_sample.result.append(word_pos_sample)
-            word_im_sample = process_word_tree(word_im)
-            word_pos_sample.result = word_im_sample
-        return line_im_sample
-
-    def process_word_tree(word_im):
-        """process a word"""
-        word_im_sample = Sample(None, word_im, [], 0.0, False, False)
-
-        for char_pos in find_char_poss(word_im):
-            char_im = extract_char(char_pos, word_im)
-            char = classify_char(char_im)
-
-            char_pos_sample = Sample(word_im_sample, char_pos, None, 0.0, False, False)
-            word_im_sample.result.append(char_pos_sample)
-            char_im_sample = Sample(char_pos_sample, char_im, None, 0.0, False, False)
-            char_pos_sample.result = char_im_sample
-            char_im_sample.result = char
-        return word_im_sample
-
-    return process_image_tree
-
-
-def main(argv):
-
-    """main program"""
-
-    if len(argv) < 2:
-        print("usage: driver image")
-        sys.exit()
-
-    input_filename = argv[1]
-
-    print("input file name:", input_filename)
-    image = cv2.imread(input_filename)
+    """construct the current best recognition process"""
 
     # build the individual process functions
     px_above, px_below = 72, 32
 
-    find_lines = lambda im: findlines.find(im)[1]
+    find_line_poss = lambda im: findlines.find(im)[1]
     extract_line = lambda lpos, im: extract.extract_line_image(
         lpos, im, px_above, px_below)
 
@@ -236,10 +172,100 @@ def main(argv):
 
     # put the pieces together
     process = build_process(
-        find_lines, extract_line,
+        find_line_poss, extract_line,
         find_word_poss, extract_word,
         find_char_poss, extract_char,
         classify_char)
+
+    return process
+
+
+def build_process(
+        find_line_poss, extract_line,
+        find_word_poss, extract_word,
+        find_char_poss, extract_char,
+        classify_char):
+
+    """build full recognition process"""
+
+    def process_image(image):
+        """process an image"""
+        image_sample = Sample(None, image, [], 0.0, False, False)
+
+        for line_pos in find_line_poss(image):
+            line_pos_sample = process_line_position(line_pos, image)
+            image_sample.result.append(line_pos_sample)
+            print(".", end="", flush=True)
+        print()
+        return image_sample
+
+    def process_line_position(line_pos, image):
+        """process a line position"""
+        line_im = extract_line(line_pos, image)
+        line_pos_sample = Sample(line_im, line_pos, None, 0.0, False, False)
+        line_im_sample = process_line(line_im)
+        line_pos_sample.result = line_im_sample
+        return line_pos_sample
+
+    def process_line(line_im):
+        """process a line"""
+        line_im_sample = Sample(None, line_im, [], 0.0, False, False)
+
+        for word_pos in find_word_poss(line_im):
+            word_im = extract_word(word_pos, line_im)
+
+            word_pos_sample = Sample(line_im_sample, word_pos, None, 0.0, False, False)
+            line_im_sample.result.append(word_pos_sample)
+            word_im_sample = process_word(word_im)
+            word_pos_sample.result = word_im_sample
+        return line_im_sample
+
+    # TODO: process_word_position function
+
+    def process_word(word_im):
+        """process a word"""
+        word_im_sample = Sample(None, word_im, [], 0.0, False, False)
+
+        for char_pos in find_char_poss(word_im):
+            char_im = extract_char(char_pos, word_im)
+
+            char_pos_sample = Sample(word_im_sample, char_pos, None, 0.0, False, False)
+            word_im_sample.result.append(char_pos_sample)
+            char_im_sample = process_char(char_im)
+            char_pos_sample.result = char_im_sample
+
+        return word_im_sample
+
+    def process_char(char_im):
+        """process a character"""
+        char_im_sample = Sample(None, char_im, None, 0.0, False, False)
+
+        char = classify_char(char_im)
+        char_im_sample.result = char
+        return char_im_sample
+
+    return (
+        process_image,
+        process_line,
+        process_line_position,
+        process_word,
+        process_char)
+
+
+def main(argv):
+
+    """main program"""
+
+    if len(argv) < 2:
+        print("usage: driver image")
+        sys.exit()
+
+    input_filename = argv[1]
+
+    print("input file name:", input_filename)
+    image = cv2.imread(input_filename)
+
+    process = current_process()[0]
 
     # do the processing
     image_sample = process(image)
@@ -250,6 +276,7 @@ def main(argv):
             cv2.namedWindow("line analysis", cv2.WINDOW_NORMAL)
             cv2.imshow("line analysis", im)
             cv2.waitKey()
+        cv2.destroyWindow("line analysis")
 
     def join_words(words):
         """helper"""
@@ -265,6 +292,9 @@ def main(argv):
     for line_result in line_results:
         print(line_result)
 
+    print("writing output file...", end="")
+    util.save(image_sample, input_filename + ".sample.pkl.0")
+    print("done")
 
 if __name__ == "__main__":
     main(sys.argv)

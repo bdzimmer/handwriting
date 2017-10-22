@@ -18,13 +18,13 @@ import cv2
 from handwriting import geom
 
 
-def annotate_lines(image, org_lines):
+def annotate_lines(image, lines):
 
     """Interactively annotate lines (usually to indicate lines of text)."""
 
     scale_factor = 0.2
 
-    lines = [x for x in org_lines]
+    lines = [x for x in lines]
 
     def draw():
         """helper"""
@@ -86,6 +86,8 @@ def annotate_lines(image, org_lines):
         elif key == 8:
             lines.pop()
             draw()
+
+    cv2.destroyWindow("image")
 
     return lines
 
