@@ -128,7 +128,10 @@ def _filter_cc(image):
     sizes = comps[2][:, cv2.CC_STAT_AREA]
 
     # get index of second-largest component
-    second_largest_idx = np.argsort(sizes)[-2]
+    if len(sizes) > 1:
+        second_largest_idx = np.argsort(sizes)[-2]
+    else:
+        second_largest_idx = np.argsort(sizes)[-1]
 
     # eliminate everything else
     for label_idx in range(len(sizes)):
@@ -264,8 +267,8 @@ def main():
             _downsample(p_img, 0.1),
             _downsample(p_img, 0.05)))
 
-    train_filenames = ["20170929_2.png.character.pkl", "20170929_3.png.character.pkl"]
-    test_filenames = ["20170929_1.png.character.pkl"]
+    train_filenames = ["data/20170929_2.png.character.pkl", "data/20170929_3.png.character.pkl"]
+    test_filenames = ["data/20170929_1.png.character.pkl"]
 
     def load_samples(filenames):
         """load  valid character samples from file, converting the data field
@@ -292,12 +295,13 @@ def main():
     # eliminate groups from training and test
     # where we have less than a certain number of samples or they aren't
     # characters that we currently want to train on
+    min_label_examples = 1
     remove_labels = ["\"", "!", "/"]
 
     train_gr = dict(_group_by_label(
         data_train_unbalanced, labels_train_unbalanced))
     keep_labels = [x for x, y in train_gr.items()
-                   if len(y) >= 2 and x not in remove_labels]
+                   if len(y) >= min_label_examples and x not in remove_labels]
     print("keep labels:", sorted(keep_labels))
 
     train_grf = {x: y for x, y in train_gr.items() if x in keep_labels}
@@ -344,7 +348,7 @@ def main():
 
     print("score on test dataset", svc_score(data_test, labels_test))
     # TODO: visualize ROC curves and confusion matrix
-    util.save_dill((svc_predict, svc_score), "char_class_svc.pkl")
+    util.save_dill((svc_predict, svc_score), "models/char_class_svc.pkl")
 
     if VISUALIZE:
         labels_test_pred = svc_predict(data_test)
