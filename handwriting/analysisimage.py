@@ -104,10 +104,10 @@ def line_analysis_image(
 
     def char_image(ch):
         """draw character image"""
-        char_im = np.zeros((line_height, 20, 3), dtype=np.uint8)
+        char_im = np.zeros((line_height, 22, 3), dtype=np.uint8)
         cv2.putText(
             char_im, ch, (1, int(line_height / 2)),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 255), 2, cv2.LINE_AA)
+            cv2.FONT_HERSHEY_COMPLEX, 0.75, (0, 255, 255), 1, cv2.LINE_AA)
         return char_im
 
     all_chars_im = combine_ims(

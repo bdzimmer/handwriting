@@ -44,17 +44,17 @@ def save_dill(obj, output_filename):
         dill.dump(obj, output_file)
 
 
-def patch_image(bmps):
+def patch_image(bmps, width=16, height=16):
 
     """combine up to 256 images into a larger image"""
 
+    # TODO: get rid of default values for width and height
     patch_size = bmps[0].shape[0]
+    res = np.zeros((height * patch_size, width * patch_size, 3), dtype=np.uint8)
 
-    res = np.zeros((16 * patch_size, 16 * patch_size, 3), dtype=np.uint8)
-
-    for idx in range(min(len(bmps), 256)):
-        col = idx % 16 * patch_size
-        row = int(idx / 16) * patch_size
+    for idx in range(min(len(bmps), width * height)):
+        col = idx % width * patch_size
+        row = int(idx / width) * patch_size
         res[row:(row + patch_size), col:(col + patch_size)] = bmps[idx]
 
     return res

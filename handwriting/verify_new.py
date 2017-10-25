@@ -12,14 +12,13 @@ truth for evaluation or training.
 
 
 import os
-import pickle
 import sys
 
 import cv2
 import numpy as np
 
 from handwriting import analysisimage, annotate, driver
-from handwriting import findletters
+from handwriting import findletters, charclass, charclassml, util
 from handwriting.prediction import Sample
 
 
@@ -48,6 +47,22 @@ def _mutate_set_verify_recursive(sample, verified):
     elif isinstance(sample.result, list):
         for samp in sample.result:
             _mutate_set_verify_recursive(samp, verified)
+
+
+def _verification_status_recursive(sample, verified=0, total=0):
+    """recursively determine how much of the sample has been verified"""
+    total = total + 1
+    if sample.verified:
+        verified = verified + 1
+    if isinstance(sample.result, Sample):
+        verified, total = _verification_status_recursive(
+            sample.result, verified, total)
+    elif isinstance(sample.result, list):
+        for samp in sample.result:
+            verified, total = _verification_status_recursive(
+                samp, verified, total)
+    return verified, total
+
 
 
 def _mutate_recalculate_list(
@@ -142,14 +157,15 @@ def _mutate_verify_multi(
 
             elif mouse_y >= lai.words_y_start and mouse_y < lai.words_y_end:
                 print("words")
-                # which word are we modifying?
 
-                word_positions = [x for x in line_image_sample.result]
+                # which word are we modifying?
+                word_positions = line_image_sample.result
                 idx = _image_idx(
                     mouse_x - lai.all_words_im_x,
                     [word_pos.data[1] - word_pos.data[0] for word_pos in word_positions],
                     analysisimage.HGAP_LARGE)
 
+                # TODO: work with word image sample instead
                 word_position_sample = word_positions[idx]
 
                 char_positions = [x.data for x in word_position_sample.result.result]
@@ -177,19 +193,54 @@ def _mutate_verify_multi(
                     char_positions_verified = findletters.gaps_to_positions(char_gaps_verified)
 
                 print("char positions verified:", char_positions_verified)
-                compare_func = lambda x, y: np.allclose(x, y)
                 calc_func = lambda x: process_char_position(x, word_position_sample.result.data)
                 _mutate_recalculate_list(
                     word_position_sample.result.result, char_positions_verified,
-                    compare_func, calc_func)
+                    np.allclose, calc_func)
                 word_position_sample.result.verified = True # verify word image sample
                 for samp in word_position_sample.result.result: # verify char position samples
                     samp.verified = True
                 draw()
 
             elif mouse_y >= lai.char_ims_y_start and mouse_y < lai.char_ims_y_end:
-                # TODO: verify character labels
+                # verify character labels by word
                 print("char ims")
+
+                # which word are we modifying?
+                word_positions = line_image_sample.result
+                idx = _image_idx(
+                    mouse_x - lai.all_char_ims_im_x,
+                    [np.sum([char_pos.data[1] - char_pos.data[0] + analysisimage.HGAP_SMALL
+                             for char_pos in word_pos.result.result]) - analysisimage.HGAP_SMALL
+                     for word_pos in word_positions],
+                    analysisimage.HGAP_LARGE)
+
+                patch_width = 96
+                patch_height = 96
+                pad = lambda x: charclassml.pad_char_bmp(x, patch_width, patch_height)
+                # TODO: most of this logic is to deal with the charclass interface
+                def pad_preds(preds):
+                    """helper"""
+                    return [p.copy(data=(pad(p.data), None, p.data)) for p in preds]
+                def unpad_preds(preds):
+                    """helper"""
+                    return [p.copy(data=(p.data[2], p.data[1])) for p in preds]
+
+                while idx < len(word_positions):
+                    char_img_samples = [char_pos.result
+                                        for char_pos in word_positions[idx].result.result]
+                    chars_working, chars_done = charclass.label_chars(pad_preds(char_img_samples))
+                    # this is a bit of a hack, but it works well for now.
+                    print(len(chars_working), len(chars_done))
+                    if len(chars_done) == 0:
+                        break
+                    char_img_samples_verified = unpad_preds(chars_working) + unpad_preds(chars_done)
+                    for org_sample, new_sample in zip(char_img_samples, char_img_samples_verified):
+                        org_sample.result = new_sample.result
+                        org_sample.verified = new_sample.verified
+                    draw()
+                    idx = idx + 1
+
             elif mouse_y >= lai.chars_y_start and mouse_y < lai.chars_y_end:
                 print("chars")
 
@@ -241,8 +292,12 @@ def main(argv):
 
     sample_filename_full = os.path.join(sample_dirname, latest_filename)
     print("loading sample file:", sample_filename_full)
-    with open(sample_filename_full, "rb") as sample_file:
-        image_sample = pickle.load(sample_file)
+    image_sample = util.load(sample_filename_full)
+    # with open(sample_filename_full, "rb") as sample_file:
+    #     image_sample = pickle.load(sample_file)
+
+    status = _verification_status_recursive(image_sample)
+    print(status[0], "/", status[1], "samples verified")
 
     (process_image,
      process_line_position,
@@ -265,10 +320,14 @@ def main(argv):
                 new_char_annotation_mode)
 
     if verify_type != "view":
+        status = _verification_status_recursive(image_sample)
+        print(status[0], "/", status[1], "samples verified")
+
         sample_filename_full = sample_filename + "." + str(latest_version + 1)
         print("writing sample file:", sample_filename_full)
-        with open(sample_filename_full, "wb") as sample_file:
-            pickle.dump(image_sample, sample_file)
+        util.save(image_sample, sample_filename_full)
+        # with open(sample_filename_full, "wb") as sample_file:
+        #     pickle.dump(image_sample, sample_file)
 
 
 if __name__ == "__main__":

@@ -21,7 +21,6 @@ def label_chars(chars):
     """label and categorize character images with the mouse and keyboard"""
 
     # TODO: optionally show the word image (second element of data tuple)
-
     # assumes the first part of the data tuples are bitmaps already padded to
     # the same size
 
@@ -31,9 +30,9 @@ def label_chars(chars):
     chars_working = [(x, False) for x in chars]
     chars_done = []
 
-    new_char = ["Z"]
+    new_char = ["`"]
     idx = [0]
-    type_mode = False
+    type_mode = True
 
     # assumes the
 
@@ -42,10 +41,10 @@ def label_chars(chars):
 
     blank_patch = np.zeros((patch_width, patch_height, 3), dtype=np.uint8)
 
-    def on_mouse(event, x, y, flags, params):
+    def on_mouse(event, mouse_x, mouse_y, flags, params):
         """helper"""
         if event == cv2.EVENT_LBUTTONDOWN:
-            idx[0] = int(y / patch_height) * 16 + int(x / patch_width)
+            idx[0] = int(mouse_y / patch_height) * 16 + int(mouse_x / patch_width)
             if idx[0] < len(chars_working):
                 pred = chars_working[idx[0]][0]
                 pred_new = pred.copy(result=new_char[0], verified=True)
@@ -57,7 +56,7 @@ def label_chars(chars):
         print("total working characters:", len([x for x, y in chars_working if not y]))
         bmps = [x.data[0] if not y else blank_patch
                 for x, y in chars_working]
-        patch_im = util.patch_image(bmps)
+        patch_im = util.patch_image(bmps, 16, 2)
         cv2.imshow("characters", patch_im)
 
     cv2.namedWindow("characters", cv2.WINDOW_NORMAL)
@@ -65,6 +64,8 @@ def label_chars(chars):
     draw()
 
     while True:
+        if len(chars_done) == 0 and len([x for x, y in chars_working if not y]) == 0:
+            break
         key = cv2.waitKey(60000)
         if key == 27:
             break
@@ -86,7 +87,7 @@ def label_chars(chars):
             draw()
             continue
         elif key == 32: # space
-            new_char[0] = None
+            new_char[0] = "`"
             print("marking invalid")
         else:
             new_char[0] = chr(key & 0xFF)
@@ -102,8 +103,11 @@ def label_chars(chars):
                 idx[0] = len(chars_working) - 1
             draw()
 
+
     chars_done = chars_done + [x for x in chars_working if x[1]]
     chars_working = [x for x in chars_working if not x[1]]
+
+    cv2.destroyWindow("characters")
 
     return [x[0] for x in chars_working], [x[0] for x in chars_done]
 
