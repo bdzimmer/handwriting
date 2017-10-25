@@ -87,9 +87,10 @@ def annotate_lines(image, lines):
             lines.pop()
             draw()
 
+    lines_sorted = sorted(lines, key=lambda x: 0.5 * (x[1] + x[3]))
     cv2.destroyWindow("image")
 
-    return lines
+    return lines_sorted
 
 
 def annotate_word_positions(line_image, word_positions):
@@ -103,14 +104,16 @@ def annotate_word_positions(line_image, word_positions):
     def draw():
         """helper"""
         disp_image = 255 - np.copy(line_image)
-        print("word count:", len(wpos))
+        print("count:", len(wpos))
         for widx, wp in enumerate(wpos):
             for idx in np.arange(wp[0], wp[1]):
                 disp_image[:, idx, 2] = 255
                 cv2.putText(
                     disp_image, str(widx), (wp[0], 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2)
-        cv2.imshow("word positions", cv2.resize(
+            disp_image[:, wp[0], 1] = 255
+            disp_image[:, wp[1] - 1, 1] = 255
+        cv2.imshow("positions", cv2.resize(
             disp_image,
             (int(disp_image.shape[1] * scale_factor), int(disp_image.shape[0] * scale_factor))))
 
@@ -140,14 +143,16 @@ def annotate_word_positions(line_image, word_positions):
             draw()
             cv2.waitKey(1)
 
-    cv2.namedWindow("word positions", cv2.WINDOW_NORMAL)
-    cv2.setMouseCallback("word positions", on_mouse, 0)
+    cv2.namedWindow("positions", cv2.WINDOW_NORMAL)
+    cv2.setMouseCallback("positions", on_mouse, 0)
     draw()
 
     while True:
         key = cv2.waitKey(1)
         if key == 27:
             break
+
+    cv2.destroyWindow("positions")
 
     return wpos
 
@@ -209,6 +214,8 @@ def annotate_letter_gaps(word_image, letter_gaps):
         if key == 27:
             break
 
+    cv2.destroyWindow("letter gaps")
+
     return lgaps
 
 
@@ -240,6 +247,10 @@ def annotate_character(char_image, word_image, character):
         new_char = None
     else:
         new_char = chr(key & 0xFF)
+
+    cv2.destroyWindow("character image")
+    cv2.destroyWindow("word image")
+
     return new_char
 
 

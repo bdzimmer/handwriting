@@ -43,10 +43,22 @@ def find_thresh_peaks(word_image):
                           if y >= peak_thresh]
 
     # print("filtered peaks length:", len(peak_idxs_filtered))
-    gaps = [0] + peak_idxs_filtered + [word_image.shape[0]]
+    gaps = [0] + peak_idxs_filtered + [word_image.shape[1] - 1]
 
     # convert gap locations to list of pairs
-    positions = [x for x in list(zip(gaps[:-1], gaps[1:]))
-                 if x[1] - x[0] > 0]
+    return gaps_to_positions(gaps)
 
+
+def gaps_to_positions(gaps):
+    """helper"""
+    positions = [(x, y) for x, y in list(zip(gaps[:-1], gaps[1:]))
+                 if y - x > 0]
     return positions
+
+
+def positions_to_gaps(positions):
+    """helper"""
+    if len(positions) == 1:
+        return [positions[0][0], positions[0][1]]
+    else:
+        return [positions[0][0]] + [int(0.5 * (x[1] + y[0])) for x, y in list(zip(positions[:-1], positions[1:]))] + [positions[-1][1]]

@@ -10,6 +10,9 @@ import cv2
 import numpy as np
 
 
+VISUALIZE = False
+
+
 def find_thresh(line_image):
 
     """find words using a simple threshold and sliding window."""
@@ -67,7 +70,7 @@ def find_conc_comp(line_image, merge_tol=8):
     def stat_to_pos(idx):
         """convert component index to position tuple"""
         left = comps[2][idx, cv2.CC_STAT_LEFT]
-        right = left + comps[2][idx, cv2.CC_STAT_WIDTH]
+        right = left + comps[2][idx, cv2.CC_STAT_WIDTH] - 1
         return (left, right)
 
     positions = [stat_to_pos(idx) for idx in comp_idxs]
@@ -106,7 +109,7 @@ def find_conc_comp(line_image, merge_tol=8):
     final_positions = [x for x in final_positions if x[1] - x[0] > 1 and x[0] >= 0 and x[1] >= 0]
     final_positions = sorted(final_positions, key=lambda x: x[0])
 
-    if False:
+    if VISUALIZE:
         cv2.namedWindow("thresh", cv2.WINDOW_NORMAL)
         cv2.imshow("thresh", thresh)
         cv2.namedWindow("char", cv2.WINDOW_NORMAL)
