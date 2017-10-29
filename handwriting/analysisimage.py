@@ -164,5 +164,6 @@ def char_image_var_width(character, line_height):
     cv2.putText(
         char_im, character, (pad, line_position),
         cv2.FONT_HERSHEY_COMPLEX, 1.0, (0, 0, 0), 2, cv2.LINE_AA)
-    last_col_idx = np.where(np.sum(char_im[:, :, 0] < 100, axis=0) > 0)[0][-1]
+    col_idxs = np.where(np.sum(char_im[:, :, 0] < 100, axis=0) > 0)[0]
+    last_col_idx = col_idxs[-1] if len(col_idxs) > 0 else pad
     return char_im[:, 0:(last_col_idx + pad + 1), :]

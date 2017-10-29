@@ -37,8 +37,8 @@ def current_best_process():
     extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
 
     print("loading models...", end="")
-    classify_characters, _ = util.load_dill("models/char_class_svc.pkl")
-    classify_char = lambda x: classify_characters([(x,)])[0]
+    classify_characters = util.load_dill("models/classify_characters.pkl")[0]
+    classify_char = lambda x: classify_characters([x])[0]
     print("done")
 
     # put the pieces together
@@ -163,7 +163,7 @@ def main(argv):
         return " ".join(["".join(x) for x in words])
     chars_remove = "`"
     line_results = [join_words([[char_pos.result.result for char_pos in word_pos.result.result]
-                     for word_pos in line_pos.result.result])
+                                for word_pos in line_pos.result.result])
                     for line_pos in image_sample.result]
     line_results = [x.translate({ord(c): None for c in chars_remove})
                     for x in line_results]

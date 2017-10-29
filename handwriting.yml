@@ -9,3 +9,4 @@ dependencies:
     - spyder=3.2.3
     - matplotlib=2.0.2
     - dill=0.2.6
+    - coverage=4.4.1
