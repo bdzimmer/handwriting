@@ -102,17 +102,16 @@ def line_analysis_image(
         [combine_ims(x, hgap_small_im)
          for x in char_ims_by_word], hgap_large_im)
 
-    def char_image(ch):
-        """draw character image"""
-        char_im = np.zeros((line_height, 22, 3), dtype=np.uint8)
-        cv2.putText(
-            char_im, ch, (1, int(line_height / 2)),
-            cv2.FONT_HERSHEY_COMPLEX, 0.75, (0, 255, 255), 1, cv2.LINE_AA)
-        return char_im
-
     all_chars_im = combine_ims(
-        [combine_ims([im_ver(char_image(y[0]), y[1]) for y in x], hgap_small_im)
-         for x in chars_by_word], hgap_large_im)
+        [combine_ims(
+            [im_ver(
+                # char_image_fixed_width(y[0], 22, line_height),
+                char_image_var_width(y[0], line_height),
+                y[1])
+             for y in x],
+            hgap_small_im)
+         for x in chars_by_word],
+        hgap_large_im)
 
     max_width = np.max([
         line_im.data.shape[1],
@@ -144,3 +143,26 @@ def line_analysis_image(
         all_chars_im_pad))
 
     return res, line_im_x, all_words_im_x, all_char_ims_im_x, all_char_ims_x
+
+
+def char_image_fixed_width(character, char_width, line_height):
+    """draw  a fixed width character image"""
+    char_im = np.zeros((line_height, char_width, 3), dtype=np.uint8)
+    cv2.putText(
+        char_im, character, (1, int(line_height / 2)),
+        cv2.FONT_HERSHEY_COMPLEX, 0.75, (0, 255, 255), 1, cv2.LINE_AA)
+    return char_im
+
+
+def char_image_var_width(character, line_height):
+    """draw a variable width character image"""
+    # used for display as well as synthetic data for unit tests
+    pad = 3
+    line_position = int(line_height * 0.6)
+    char_im = np.ones((line_height, 75, 3), dtype=np.uint8) * 245
+    char_im[line_position:(line_position + 4), :, :] = (255, 255, 0)
+    cv2.putText(
+        char_im, character, (pad, line_position),
+        cv2.FONT_HERSHEY_COMPLEX, 1.0, (0, 0, 0), 2, cv2.LINE_AA)
+    last_col_idx = np.where(np.sum(char_im[:, :, 0] < 100, axis=0) > 0)[0][-1]
+    return char_im[:, 0:(last_col_idx + pad + 1), :]
