@@ -297,7 +297,9 @@ def main(argv):
     #     image_sample = pickle.load(sample_file)
 
     status = _verification_status_recursive(image_sample)
-    print(status[0], "/", status[1], "samples verified")
+    print(
+        status[0], "/", status[1], "samples verified", "-",
+        np.round(status[0] / status[1] * 100, 2), "%")
 
     (process_image,
      process_line_position,
@@ -321,7 +323,9 @@ def main(argv):
 
     if verify_type != "view":
         status = _verification_status_recursive(image_sample)
-        print(status[0], "/", status[1], "samples verified")
+        print(
+            status[0], "/", status[1], "samples verified", "-",
+            np.round(status[0] / status[1] * 100, 2), "%")
 
         sample_filename_full = sample_filename + "." + str(latest_version + 1)
         print("writing sample file:", sample_filename_full)
