@@ -21,15 +21,17 @@ def build_current_best_process(data_train, labels_train):
 
     """build the current best character classification process"""
 
-    patch_width = 96
-    patch_height = 96
+    pad_image_96 = lambda x: pad_image(x, 96, 96)
 
-    pad_image = lambda x: pad_char_bmp(x, patch_width, patch_height)
-    prep_image = lambda x: _align(_filter_cc(pad_image(x)))
+    def prep_image(image):
+        """prepare an image (result can still be visualized as an image)"""
+        start_row = 16
+        image = image[start_row:, :]
+        return _align(_filter_cc(pad_image_96(image)))
 
-    def feat_extractor(data):
-        """helper"""
-        p_img = prep_image(data)
+    def feat_extractor(image):
+        """convert image to feature vector"""
+        p_img = prep_image(image)
         return _downsample_4(p_img)
 
     feats_train = [feat_extractor(x) for x in data_train]
@@ -64,7 +66,6 @@ def build_feat_selection_pca(feats, n_components):
 
 def train_char_class_svc(
         feats, labels, n_splits):
-
     """train an SVC character classifier"""
 
     # train SVC, tuning hyperparameters with k-fold cross validation
@@ -124,19 +125,37 @@ def build_classification_process(feat_extractor, feat_selector, classifier):
     return predict
 
 
-def pad_char_bmp(char_bmp, width, height):
-    """pad char bitmap in a larger bitmap"""
+def pad_image(char_bmp, width, height):
+    """pad char image in a larger image"""
 
-    # TODO: this needs to work if char_bmp is larger than the new size
+    xoff = abs(int((char_bmp.shape[1] - width) / 2))
+    yoff = abs(int((char_bmp.shape[0] - height) / 2))
 
-    start_row = 16
+    if width >= char_bmp.shape[1]:
+        x_min_old = 0
+        x_max_old = char_bmp.shape[1]
+        x_min_new = xoff
+        x_max_new = char_bmp.shape[1] + xoff
+    else:
+        x_min_old = xoff
+        x_max_old = width + xoff
+        x_min_new = 0
+        x_max_new = width
+
+    if height >= char_bmp.shape[0]:
+        y_min_old = 0
+        y_max_old = char_bmp.shape[0]
+        y_min_new = yoff
+        y_max_new = char_bmp.shape[0] + yoff
+    else:
+        y_min_old = yoff
+        y_max_old = width + yoff
+        y_min_new = 0
+        y_max_new = height
+
+    image_subset = char_bmp[y_min_old:y_max_old, x_min_old:x_max_old]
     new_bmp = np.ones((height, width, 3), dtype=np.uint8) * 255
-
-    char_bmp = char_bmp[start_row:, :]
-    xoff = int((width - char_bmp.shape[1]) / 2)
-    yoff = int((height - char_bmp.shape[0]) / 2)
-
-    new_bmp[yoff:(yoff + char_bmp.shape[0]), xoff:(xoff + char_bmp.shape[1])] = char_bmp
+    new_bmp[y_min_new:y_max_new, x_min_new:x_max_new] = image_subset
 
     return new_bmp
 

@@ -11,8 +11,8 @@ Unit tests for character classification.
 import string
 import unittest
 
+import cv2
 import numpy as np
-
 
 from handwriting import charclassml as cml, analysisimage, charclass
 from handwriting.prediction import Sample
@@ -24,8 +24,65 @@ class TestsCharClassML(unittest.TestCase):
 
     """Unit tests for character classification."""
 
+    def test_balance(self):
+        """test dataset balancing functionality"""
+
+        data, labels = zip(*([(0.0, "a")] * 4 + [(1.0, "b")] * 1))
+
+        balanced_data, balanced_labels = cml.balance(
+            data, labels, 0.5, lambda x: x)
+        balanced_grouped = dict(cml.group_by_label(
+            balanced_data, balanced_labels))
+        for label, group in balanced_grouped.items():
+            self.assertEqual(len(group), 2)
+
+        balanced_data, balanced_labels = cml.balance(
+            data, labels, 8, lambda x: x)
+        balanced_grouped = dict(cml.group_by_label(
+            balanced_data, balanced_labels))
+        for label, group in balanced_grouped.items():
+            self.assertEqual(len(group), 8)
+
+
+    def test_pad_image(self):
+        """test function to pad an image"""
+
+        # image is smaller in both dimensions
+        image = np.ones((8, 8, 3), dtype=np.uint8) * (0, 0, 255)
+        image_padded = cml.pad_image(image, 16, 16)
+        self.assertEqual(image_padded.shape, (16, 16, 3))
+
+        if VISUALIZE:
+            image_both = np.zeros((16, 32, 3), dtype=np.uint8)
+            image_both[0:image.shape[0], 0:image.shape[1], :] = image
+            image_both[0:image_padded.shape[0], 16:(image_padded.shape[1] + 16)] = image_padded
+            cv2.namedWindow("padding", cv2.WINDOW_NORMAL)
+            cv2.imshow("padding", image_both)
+            cv2.waitKey()
+
+        # image is larger in both dimensions
+        image = np.ones((16, 16, 3), dtype=np.uint8) * (0, 0, 255)
+        image_padded = cml.pad_image(image, 8, 8)
+        self.assertEqual(image_padded.shape, (8, 8, 3))
+
+        # image is larger in x dimension
+        image = np.ones((8, 16, 3), dtype=np.uint8) * (0, 0, 255)
+        image_padded = cml.pad_image(image, 8, 8)
+        self.assertEqual(image_padded.shape, (8, 8, 3))
+
+        # image is larger in y dimension
+        image = np.ones((16, 8, 3), dtype=np.uint8) * (0, 0, 255)
+        image_padded = cml.pad_image(image, 8, 8)
+        self.assertEqual(image_padded.shape, (8, 8, 3))
+
+        # image is same in both dimensions
+        image = np.ones((8, 8, 3), dtype=np.uint8) * (0, 0, 255)
+        image_padded = cml.pad_image(image, 8, 8)
+        self.assertEqual(image_padded.shape, (8, 8, 3))
+
+
     def test_process(self):
-        """test """
+        """test the full classification process"""
 
         print("generating synthetic data...", end="")
 
@@ -68,7 +125,10 @@ class TestsCharClassML(unittest.TestCase):
          classifier, classifier_score) = res
 
         feats_test = feat_selector([feat_extractor(x) for x in data_test])
-        print("score on test dataset", classifier_score(feats_test, labels_test))
+        score = classifier_score(feats_test, labels_test)
+        print("score on test dataset", score)
+
+        self.assertGreater(score, 0.5)
 
         print("done")
 

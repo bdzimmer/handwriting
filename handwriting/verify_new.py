@@ -217,7 +217,7 @@ def _mutate_verify_multi(
 
                 patch_width = 96
                 patch_height = 96
-                pad = lambda x: charclassml.pad_char_bmp(x, patch_width, patch_height)
+                pad = lambda x: charclassml.pad_image(x, patch_width, patch_height)
                 # TODO: most of this logic is to deal with the charclass interface
                 def pad_preds(preds):
                     """helper"""

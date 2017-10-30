@@ -121,7 +121,7 @@ def main():
     patch_width = 96
     patch_height = 96
 
-    pad = lambda x: charclassml.pad_char_bmp(x, patch_width, patch_height)
+    pad = lambda x: charclassml.pad_image(x, patch_width, patch_height)
 
     def pad_preds(preds):
         """helper"""
