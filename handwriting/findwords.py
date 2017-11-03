@@ -49,7 +49,7 @@ def find_thresh(line_image):
     return positions
 
 
-def find_conc_comp(line_image, merge_tol=8):
+def find_conc_comp(line_image, merge=True, merge_tol=8):
 
     """find words using connected components."""
 
@@ -81,30 +81,33 @@ def find_conc_comp(line_image, merge_tol=8):
 
     final_positions = []
 
-    for x in positions:
-        merged = False
-        for idx, y in enumerate(final_positions):
-            if x[0] >= y[0] and x[0] <= y[1]:
-                if x[1] > y[1]:
-                    final_positions[idx] = (y[0], x[1])
-                merged = True
-            elif x[1] <= y[1] and x[1] >= y[0]:
-                if x[0] < y[0]:
+    if merge:
+        for x in positions:
+            merged = False
+            for idx, y in enumerate(final_positions):
+                if x[0] >= y[0] and x[0] <= y[1]:
+                    if x[1] > y[1]:
+                        final_positions[idx] = (y[0], x[1])
+                    merged = True
+                elif x[1] <= y[1] and x[1] >= y[0]:
+                    if x[0] < y[0]:
+                        final_positions[idx] = (x[0], y[1])
+                    merged = True
+                elif x[0] <= y[0] and x[1] >= y[1]:
+                    final_positions[idx] = x
+                    merged = True
+                elif abs(x[1] - y[0]) < merge_tol:
                     final_positions[idx] = (x[0], y[1])
-                merged = True
-            elif x[0] <= y[0] and x[1] >= y[1]:
-                final_positions[idx] = x
-                merged = True
-            elif abs(x[1] - y[0]) < merge_tol:
-                final_positions[idx] = (x[0], y[1])
-                merged = True
-            elif abs(y[1] - x[0]) < merge_tol:
-                final_positions[idx] = (y[0], x[1])
-                merged = True
-            if merged:
-                break
-        if not merged:
-            final_positions.append(x)
+                    merged = True
+                elif abs(y[1] - x[0]) < merge_tol:
+                    final_positions[idx] = (y[0], x[1])
+                    merged = True
+                if merged:
+                    break
+            if not merged:
+                final_positions.append(x)
+    else:
+        final_positions = positions
 
     final_positions = [x for x in final_positions if x[1] - x[0] > 1 and x[0] >= 0 and x[1] >= 0]
     final_positions = sorted(final_positions, key=lambda x: x[0])

@@ -30,11 +30,19 @@ def current_best_process():
         lpos, im, px_above, px_below)
 
     # find_word_poss = findwords.find_thresh
-    find_word_poss = lambda x: findwords.find_conc_comp(x, merge_tol=8)
+    find_word_poss = lambda x: findwords.find_conc_comp(x, merge=True, merge_tol=8)
     extract_word = lambda wpos, im: im[:, wpos[0]:wpos[1]]
-
-    find_char_poss = findletters.find_thresh_peaks
+    # find_char_poss = findletters.find_thresh_peaks # oversegments
+    find_char_poss = lambda x: findwords.find_conc_comp( # undersegments
+        x, merge=False)
     extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
+    # def add(x, y):
+    #     return x[0] + y[0], x[0] + y[1]
+    # def find_char_poss(im):
+    #     """helper"""
+    #     init_poss =  findwords.find_conc_comp(im, merge=False)
+    #     return [add(x, y) for x in init_poss
+    #             for y in findletters.find_thresh_peaks(extract_char(x, im))]
 
     print("loading models...", end="")
     classify_characters = util.load_dill("models/classify_characters.pkl")[0]
