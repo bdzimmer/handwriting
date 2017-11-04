@@ -9,6 +9,7 @@ Run full recognition process.
 import sys
 
 import cv2
+import numpy as np
 
 from handwriting import findlines, findwords, findletters, extract, util
 from handwriting import analysisimage
@@ -32,9 +33,10 @@ def current_best_process():
     # find_word_poss = findwords.find_thresh
     find_word_poss = lambda x: findwords.find_conc_comp(x, merge=True, merge_tol=8)
     extract_word = lambda wpos, im: im[:, wpos[0]:wpos[1]]
+
     # find_char_poss = findletters.find_thresh_peaks # oversegments
-    find_char_poss = lambda x: findwords.find_conc_comp( # undersegments
-        x, merge=False)
+    # find_char_poss = lambda x: findwords.find_conc_comp( # undersegments
+    #     x, merge=False)
     extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
     # def add(x, y):
     #     return x[0] + y[0], x[0] + y[1]
@@ -45,8 +47,31 @@ def current_best_process():
     #             for y in findletters.find_thresh_peaks(extract_char(x, im))]
 
     print("loading models...", end="")
+
+    classify_char_pos = util.load_dill("models/classify_charpos.pkl")[0]
+    def find_char_poss(word_im):
+        half_width = 8
+        char_poss = []
+        run = []
+        for x in range(2, word_im.shape[1] - 2, 2):
+            test_range = (x - half_width, x + half_width)
+            test_im = extract_char(test_range, word_im)
+            # print("testing", test_range, test_im.shape)
+            if classify_char_pos([test_im])[0]:
+                run.append(x)
+            else:
+                if len(run) > 1:
+                    char_poss.append(int(np.mean(run)))
+                    run = []
+        if len(run) > 1:
+            char_poss.append(int(np.mean(run)))
+            run = []
+
+        return findletters.gaps_to_positions([0] + char_poss + [word_im.shape[1] - 1])
+
     classify_characters = util.load_dill("models/classify_characters.pkl")[0]
     classify_char = lambda x: classify_characters([x])[0]
+
     print("done")
 
     # put the pieces together

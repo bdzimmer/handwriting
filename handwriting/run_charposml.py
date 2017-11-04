@@ -8,6 +8,8 @@ a letter or between letters.
 
 # Copyright (c) 2017 Ben Zimmer. All rights reserved.
 
+import sklearn
+
 from handwriting import charclassml as cml, util, charclass
 from handwriting.prediction import Sample
 
@@ -24,23 +26,26 @@ def build_process(data_train, labels_train):
 
     def prep_image(image):
         """prepare an image (result can still be visualized as an image)"""
-        start_row = 16
+        # start_row = 16
+        start_row = 32
         image = image[start_row:, :]
         # return cml._align(cml._filter_cc(pad_image_96(image)))
-        # return cml._align(pad_image_96(image))
-        return pad_image_96(image)
+        # return pad_image_96(image)
+        return cml._align(pad_image_96(image))
 
     def feat_extractor(image):
         """convert image to feature vector"""
         p_img = prep_image(image)
-        return cml._downsample_4(p_img)
+        # return cml._downsample_4(p_img)
+        # return cml._max_pool_multi(p_img, [2, 3, 4])
+        return cml._downsample_multi(p_img, [0.5, 0.25, 0.125])
 
     feats_train = [feat_extractor(x) for x in data_train]
-    feat_selector = cml.build_feat_selection_pca(feats_train, 0.999)
+    feat_selector = cml.build_feat_selection_pca(feats_train, 0.94)
     feats_train = feat_selector(feats_train)
 
     classifier, classifier_score = cml.train_char_class_svc(
-        feats_train, labels_train, 4)
+        feats_train, labels_train, n_splits=4, support_ratio_max=0.6)
 
     classify_char_image = cml.build_classification_process(
         feat_extractor, feat_selector, classifier)
@@ -74,19 +79,54 @@ def main():
         # for each word image, extract images of the start character positions
         # and positions in the middle of characters
         extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
-        half_width = 4
+        half_width = 8
         extract_char_half_width = lambda x, im: extract_char((x - half_width, x + half_width), im)
 
-        char_start_ims = [extract_char_half_width(x.data[0], word_im.data)
-                          for word_im in word_ims
-                          for x in word_im.result]
-        char_start_ims = [x for x in char_start_ims if x.shape[1] > 0]
+        def keep_valid(ims):
+            """keep images with width greater than 0"""
+            return [x for x in ims if x.shape[1] > 0]
 
-        char_middle_ims = [extract_char_half_width(
-                               int(x.data[0] + (x.data[1] - x.data[0]) * 0.5), word_im.data)
-                           for word_im in word_ims
-                           for x in word_im.result]
-        char_middle_ims = [x for x in char_middle_ims if x.shape[1] > 0]
+        def half(x, y):
+            """helper"""
+            return x + int((y - x) * 0.5)
+
+        # def width(x):
+        #     """helper"""
+        #     return x[1] - x[0]
+
+        # extract images from starts of all positions and ends of final
+        # position in each word
+        # (currently, start and end of adjacent characters are shared)
+
+        char_start_ims = keep_valid(
+            [extract_char_half_width(x.data[0], word_im.data)
+             for word_im in word_ims
+             for x in word_im.result
+             if x.result.result != "`" and x.result.verified] +
+            [extract_char_half_width(x.data[1], word_im.data)
+             for word_im in word_ims
+             for x in word_im.result[:-1]
+             if x.result.result != "`" and x.result.verified])
+
+        # extract images from half, one fourth, and three forths of the way
+        # between starts and ends of each position
+        char_middle_ims = keep_valid(
+            [extract_char_half_width(
+                half(x.data[0], x.data[1]), word_im.data)
+             for word_im in word_ims
+             for x in word_im.result
+             if x.result.result != "`" and x.result.verified] +
+            [extract_char_half_width(
+                half(x.data[0], half(x.data[0], x.data[1])), word_im.data)
+             for word_im in word_ims
+             for x in word_im.result
+             if x.result.result != "`" and x.result.verified] +
+            [extract_char_half_width(
+                half(half(x.data[0], x.data[1]), x.data[1]), word_im.data)
+             for word_im in word_ims
+             for x in word_im.result
+             if x.result.result != "`" and x.result.verified]
+        )
 
         # import cv2
         # for im in char_middle_ims:
@@ -102,10 +142,17 @@ def main():
     print("loading and balancing datasets...")
 
     # load training set
-    data_train_unbalanced, labels_train_unbalanced = load_samples(train_filenames)
+    data_train_unbalanced, labels_train_unbalanced = load_samples(
+        train_filenames)
+
+    print(
+        "training group sizes before balancing:",
+        [(x[0], len(x[1]))
+         for x in cml.group_by_label(
+             data_train_unbalanced, labels_train_unbalanced)])
 
     # balance classes in training set
-    balance_factor = 0.25
+    balance_factor = 1000 # 2000
     data_train, labels_train = cml.balance(
         data_train_unbalanced, labels_train_unbalanced,
         balance_factor, cml.transform_random)
@@ -146,7 +193,12 @@ def main():
 
     feats_test = feat_selector([feat_extractor(x) for x in data_test])
     print("score on test dataset", classifier_score(feats_test, labels_test))
-    # TODO: visualize ROC curves and confusion matrix
+
+    labels_test_pred = classify_char_pos(data_test)
+    print("confusion matrix:")
+    print(sklearn.metrics.confusion_matrix(
+        labels_test, labels_test_pred, [True, False]))
+    # TODO: visualize ROC curves
     util.save_dill(proc, "models/classify_charpos.pkl")
 
     if VISUALIZE:

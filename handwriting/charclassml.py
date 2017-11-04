@@ -17,7 +17,8 @@ from sklearn.model_selection import KFold
 from sklearn.svm import SVC
 
 
-def build_current_best_process(data_train, labels_train):
+def build_current_best_process(
+        data_train, labels_train, support_ratio_max):
 
     """build the current best character classification process"""
 
@@ -39,7 +40,7 @@ def build_current_best_process(data_train, labels_train):
     feats_train = feat_selector(feats_train)
 
     classifier, classifier_score = train_char_class_svc(
-        feats_train, labels_train, 4)
+        feats_train, labels_train, 4, support_ratio_max)
 
     classify_char_image = build_classification_process(
         feat_extractor, feat_selector, classifier)
@@ -65,7 +66,7 @@ def build_feat_selection_pca(feats, n_components):
 
 
 def train_char_class_svc(
-        feats, labels, n_splits):
+        feats, labels, n_splits, support_ratio_max):
     """train an SVC character classifier"""
 
     # train SVC, tuning hyperparameters with k-fold cross validation
@@ -76,6 +77,7 @@ def train_char_class_svc(
         np.logspace(-2, 0, 5))  # np.logspace(-3, 1, 5)
 
     for c, gamma in hyps:
+        svc_scores = []
         for idxs_train, idxs_test in kfold.split(feats):
 
             feats_train = [feats[idx] for idx in idxs_train]
@@ -83,18 +85,27 @@ def train_char_class_svc(
             feats_test = [feats[idx] for idx in idxs_test]
             labels_test = [labels[idx] for idx in idxs_test]
 
+            print(np.round(c, 3), np.round(gamma, 3), ": ", end="", flush=True)
+
             svc = SVC(C=c, gamma=gamma, probability=True)
             svc.fit(feats_train, labels_train)
+
+            support_ratio = np.sum(svc.n_support_) / len(idxs_train)
+            if support_ratio > support_ratio_max:
+                print("bad support:", np.round(support_ratio, 4), "- skipping")
+                break
+
             svc_score = svc.score(feats_test, labels_test)
-            models.append((svc_score, (c, gamma)))
-            print(
-                np.round(c, 3), np.round(gamma, 3), ":",
-                np.round(svc_score, 3),
-                np.round(np.sum(svc.n_support_) / len(idxs_train), 3))
+            print(np.round(svc_score, 4), np.round(support_ratio, 4))
+            svc_scores.append(svc_score)
+
+        if len(svc_scores) == n_splits:
+            mean_svc_score = np.mean(svc_scores)
+            models.append(((c, gamma), mean_svc_score))
 
     # fit a model on all training data using the best parameters
-    # TODO: somehow look at performance across folds to choose
-    c, gamma = models[np.argmax([x[0] for x in models])][1]
+    (c, gamma), mean_svc_score = models[np.argmax([x[1] for x in models])]
+    print("best mean svc score:", mean_svc_score)
     print("best hyperparameters:", c, gamma)
     svc = SVC(C=c, gamma=gamma, probability=True)
     svc.fit(feats, labels)
@@ -102,13 +113,11 @@ def train_char_class_svc(
 
     def predict(feats_test):
         """helper"""
-        # feats_test = feat_selection([data_to_feats(x) for x in data_test])
         return svc.predict(feats_test)
 
     # TODO: write a general score function in the future
     def score(feats_test, labels_test):
         """helper"""
-        # feats_test = feat_selection([data_to_feats(x) for x in data_test])
         return svc.score(feats_test, labels_test)
 
     return predict, score
@@ -231,6 +240,40 @@ def _downsample_4(image):
         _downsample(image, 0.2),
         _downsample(image, 0.1),
         _downsample(image, 0.05)))
+
+
+def _downsample_multi(image, scales):
+    """create a feature vector from arbitrary downsampling amounts"""
+    return np.hstack([_downsample(image, x) for x in scales])
+
+
+def _max_pool(im):
+    """Perform 2x2 max pooling."""
+
+    return np.max(
+        np.stack(
+            (im[0::2, 0::2],
+             im[0::2, 1::2],
+             im[1::2, 0::2],
+             im[1::2, 1::2]),
+             axis=-1),
+        axis=-1)
+
+
+def _max_pool_multi(im, ns):
+    """Perform multiple levels of max pooling and unravel
+    to create a feature vector."""
+
+    im = np.sum(im, axis=2) / (255.0 * 3.0)
+    if 1 in ns:
+        res = [im]
+    else:
+        res = []
+    for n in range(2, max(ns)):
+        im = _max_pool(im)
+        if n in ns:
+            res.append(im)
+    return np.hstack([np.ravel(y) for y in res])
 
 
 def group_by_label(samples, labels):

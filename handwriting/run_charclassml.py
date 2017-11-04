@@ -89,7 +89,7 @@ def main():
     print("training model...")
 
     proc = cml.build_current_best_process(
-        data_train, labels_train)
+        data_train, labels_train, 0.8)
 
     (classify_char_image,
      prep_image, feat_extractor, feat_selector,

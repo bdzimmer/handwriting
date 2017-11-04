@@ -88,7 +88,7 @@ class TestsGeom(unittest.TestCase):
 def _load_data():
     """load an image and its associated lines file"""
 
-    input_filename = "20170929_1.png"
+    input_filename = "data/20170929_1.png"
     lines_filename = input_filename + ".lines.pkl"
 
     im = cv2.imread(input_filename)
