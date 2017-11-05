@@ -248,7 +248,7 @@ def _downsample_multi(image, scales):
 
 
 def _max_pool(im):
-    """Perform 2x2 max pooling."""
+    """perform 2x2 max pooling"""
 
     return np.max(
         np.stack(
@@ -256,13 +256,13 @@ def _max_pool(im):
              im[0::2, 1::2],
              im[1::2, 0::2],
              im[1::2, 1::2]),
-             axis=-1),
+            axis=-1),
         axis=-1)
 
 
 def _max_pool_multi(im, ns):
-    """Perform multiple levels of max pooling and unravel
-    to create a feature vector."""
+    """perform multiple levels of max pooling and unravel
+    to create a feature vector"""
 
     im = np.sum(im, axis=2) / (255.0 * 3.0)
     if 1 in ns:

@@ -37,13 +37,6 @@ def current_best_process():
     # find_char_poss = lambda x: findwords.find_conc_comp( # undersegments
     #     x, merge=False)
     extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
-    # def add(x, y):
-    #     return x[0] + y[0], x[0] + y[1]
-    # def find_char_poss(im):
-    #     """helper"""
-    #     init_poss =  findwords.find_conc_comp(im, merge=False)
-    #     return [add(x, y) for x in init_poss
-    #             for y in findletters.find_thresh_peaks(extract_char(x, im))]
 
     print("loading models...", end="")
 

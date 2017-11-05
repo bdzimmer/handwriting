@@ -14,7 +14,8 @@ import sys
 import numpy as np
 import sklearn
 
-from handwriting import charclassml as cml, util, charclass, findletters
+from handwriting import charclassml as cml, util, charclass
+from handwriting import findletters, findwords
 from handwriting.prediction import Sample
 
 VISUALIZE = False
@@ -74,8 +75,10 @@ def _load_words(filenames):
     # only keep if word contains other letters besides "`"
     # and all of the character labels have been verified
     word_ims = [word_im for word_im in word_ims
-                if np.sum([char_pos.result.result != "`" for char_pos in word_im.result]) > 0
-                and np.sum([char_pos.result.verified for char_pos in word_im.result]) == len(word_im.result)]
+                if np.sum([char_pos.result.result != "`"
+                           for char_pos in word_im.result]) > 0
+                and np.sum([char_pos.result.verified
+                            for char_pos in word_im.result]) == len(word_im.result)]
 
     # print the words
     for word_im in word_ims:
@@ -166,14 +169,14 @@ def main(argv):
     np.random.seed(0)
     random.seed(0)
 
-    train_filenames = [
-        "data/20170929_2.png.sample.pkl.1",
-        "data/20170929_3.png.sample.pkl.1"]
-    test_filenames = [
-        "data/20170929_1.png.sample.pkl.1"]
     model_filename = "models/classify_charpos.pkl"
-
     half_width = 8
+    balance_factor = 2000
+
+    sample_filenames = ["data/20170929_" + str(idx) + ".png.sample.pkl.1"
+                        for idx in range(1, 6)]
+    train_filenames = sample_filenames[0:4]
+    test_filenames = sample_filenames[4:5]
 
     print("loading and balancing datasets...")
 
@@ -188,7 +191,6 @@ def main(argv):
              data_train_unbalanced, labels_train_unbalanced)])
 
     # balance classes in training set
-    balance_factor = 2000
     data_train, labels_train = cml.balance(
         data_train_unbalanced, labels_train_unbalanced,
         balance_factor, cml.transform_random)
@@ -261,37 +263,46 @@ def main(argv):
         # test different position finding methods using a distance function
         # on each word
 
-        classify_char_pos = util.load_dill(model_filename)[0]
-
         extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
-        find_char_poss = lambda word_im: findletters.find_classify(
-            word_im, half_width, extract_char, classify_char_pos)
 
         print("loading test words...", end="", flush=True)
         word_ims_test = _load_words(test_filenames)
         print("done")
 
-        distances = []
-        for word_im in word_ims_test:
-            positions = findletters.position_list_distance(
-                [x.data for x in word_im.result],
-                findletters.find_thresh_peaks(word_im.data))
-            distances.append(positions)
-            print(".", end="", flush=True)
+        def distance_test(find_char_poss_func):
+            """helper"""
+            distances = []
+            for word_im in word_ims_test:
+                positions = findletters.position_list_distance(
+                    [x.data for x in word_im.result],
+                    find_char_poss_func(word_im.data))
+                distances.append(positions)
+                print(".", end="", flush=True)
+            # TODO: should I be aggregating this differently?
+            return np.sum([y for x in distances for y in x])
 
-        print("position distance score (peaks):", np.sum(
-            [y for x in distances for y in x]))
+        score = distance_test(findletters.find_thresh_peaks)
+        print("position distance score - peaks:", score)
 
-        distances = []
-        for word_im in word_ims_test:
-            positions = findletters.position_list_distance(
-                [x.data for x in word_im.result],
-                find_char_poss(word_im.data))
-            distances.append(positions)
-            print(".", end="", flush=True)
+        find_comp_peaks = lambda word_im: findletters.find_combine(
+            word_im, extract_char,
+            lambda x: findwords.find_conc_comp(x, merge=False),
+            findletters.find_thresh_peaks)
+        score = distance_test(find_comp_peaks)
+        print("position distance score - comps + peaks:", score)
 
-        print("position distance score (ML):", np.sum(
-            [y for x in distances for y in x]))
+        classify_char_pos = util.load_dill(model_filename)[0]
+        find_classify = lambda word_im: findletters.find_classify(
+            word_im, half_width, extract_char, classify_char_pos)
+        score = distance_test(find_classify)
+        print("position distance score - ML:", score)
+
+        find_comp_peaks = lambda word_im: findletters.find_combine(
+            word_im, extract_char,
+            lambda x: findwords.find_conc_comp(x, merge=False),
+            find_classify)
+        score = distance_test(find_comp_peaks)
+        print("position distance score - comps + ML:", score)
 
 
 if __name__ == "__main__":

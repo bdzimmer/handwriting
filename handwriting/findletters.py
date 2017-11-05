@@ -72,6 +72,21 @@ def find_classify(word_im, half_width, extract_char, classify_char_pos):
     return gaps_to_positions([0] + char_poss + [word_im.shape[1] - 1])
 
 
+def find_combine(word_im, extract_char, func1, func2):
+    """find positions using one function, then find more positions inside
+    those with another function."""
+
+    def add(x, y):
+        """helper"""
+        return x[0] + y[0], x[0] + y[1]
+
+    # init_poss =  findwords.find_conc_comp(word_im, merge=False)
+    #  findletters.find_thresh_peaks(
+    init_poss = func1(word_im)
+    return [add(x, y) for x in init_poss
+            for y in func2(extract_char(x, word_im))]
+
+
 def gaps_to_positions(gaps):
     """helper"""
     positions = [(x, y) for x, y in list(zip(gaps[:-1], gaps[1:]))
@@ -84,7 +99,8 @@ def positions_to_gaps(positions):
     if len(positions) == 1:
         return [positions[0][0], positions[0][1]]
     else:
-        return [positions[0][0]] + [int(0.5 * (x[1] + y[0])) for x, y in list(zip(positions[:-1], positions[1:]))] + [positions[-1][1]]
+        return [positions[0][0]] + [int(0.5 * (x[1] + y[0]))
+                                    for x, y in list(zip(positions[:-1], positions[1:]))] + [positions[-1][1]]
 
 
 def position_distance(pos1, pos2):
