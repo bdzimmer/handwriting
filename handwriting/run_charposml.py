@@ -8,15 +8,19 @@ a letter or between letters.
 
 # Copyright (c) 2017 Ben Zimmer. All rights reserved.
 
+import random
+import sys
+
+import numpy as np
 import sklearn
 
-from handwriting import charclassml as cml, util, charclass
+from handwriting import charclassml as cml, util, charclass, findletters
 from handwriting.prediction import Sample
 
 VISUALIZE = False
 
 
-def build_process(data_train, labels_train):
+def build_classification_process(data_train, labels_train):
 
     """build a classification process"""
 
@@ -55,95 +59,127 @@ def build_process(data_train, labels_train):
             classifier, classifier_score)
 
 
-def main():
+def _load_words(filenames):
+    """load verified word image samples from multiple files"""
+
+    # load multiple files
+    line_poss = [y for x in filenames for y in util.load(x).result]
+
+    # get word images and verified character positions
+    word_ims = [word_pos.result
+                for line_pos in line_poss
+                for word_pos in line_pos.result.result
+                if word_pos.result.verified]
+
+    # only keep if word contains other letters besides "`"
+    # and all of the character labels have been verified
+    word_ims = [word_im for word_im in word_ims
+                if np.sum([char_pos.result.result != "`" for char_pos in word_im.result]) > 0
+                and np.sum([char_pos.result.verified for char_pos in word_im.result]) == len(word_im.result)]
+
+    # print the words
+    for word_im in word_ims:
+        print("".join([char_pos.result.result
+                       for char_pos in word_im.result]), end=" ")
+
+    return word_ims
+
+
+def _load_samples(filenames, half_width):
+    """load word image slices from multiple files"""
+
+    # load multiple files
+    line_poss = [y for x in filenames for y in util.load(x).result]
+
+    # get word images and verified character positions
+    word_ims = [word_pos.result
+                for line_pos in line_poss
+                for word_pos in line_pos.result.result
+                if word_pos.result.verified]
+
+    # helper functions for extracting images
+    extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
+    extract_char_half_width = lambda x, im: extract_char((x - half_width, x + half_width), im)
+
+    def keep_valid(ims):
+        """keep images with width greater than 0"""
+        return [x for x in ims if x.shape[1] > 0]
+
+    def half(x, y):
+        """point halfway between two points"""
+        return int((x + y) * 0.5)
+
+    # extract images from starts of all positions and ends of final
+    # position in each word
+    # (currently, start and end of adjacent characters are shared)
+    char_start_ims = keep_valid(
+        [extract_char_half_width(x.data[0], word_im.data)
+         for word_im in word_ims
+         for x in word_im.result
+         if x.result.result != "`" and x.result.verified] +
+        [extract_char_half_width(x.data[1], word_im.data)
+         for word_im in word_ims
+         for x in word_im.result[:-1]
+         if x.result.result != "`" and x.result.verified])
+
+    # extract images from half, one fourth, and three forths of the way
+    # between starts and ends of each position
+    char_middle_ims = keep_valid(
+        [extract_char_half_width(
+            half(x.data[0], x.data[1]), word_im.data)
+         for word_im in word_ims
+         for x in word_im.result
+         if x.result.result != "`" and x.result.verified] +
+        [extract_char_half_width(
+            half(x.data[0], half(x.data[0], x.data[1])), word_im.data)
+         for word_im in word_ims
+         for x in word_im.result
+         if x.result.result != "`" and x.result.verified] +
+        [extract_char_half_width(
+            half(half(x.data[0], x.data[1]), x.data[1]), word_im.data)
+         for word_im in word_ims
+         for x in word_im.result
+         if x.result.result != "`" and x.result.verified]
+    )
+
+    # import cv2
+    # for im in char_middle_ims:
+    #     print(im)
+    #     cv2.imshow("test", im)
+    #     cv2.waitKey()
+
+    data = char_start_ims + char_middle_ims
+    labels = [True] * len(char_start_ims) + [False] * len(char_middle_ims)
+
+    return data, labels
+
+
+
+def main(argv):
     """main program"""
 
+    if len(argv) < 2:
+        mode = "tune"
+    else:
+        mode = argv[1]
+
+    np.random.seed(0)
+    random.seed(0)
+
     train_filenames = [
-        "data/20170929_2.png.sample.pkl.8",
-        "data/20170929_3.png.sample.pkl.5"]
+        "data/20170929_2.png.sample.pkl.1",
+        "data/20170929_3.png.sample.pkl.1"]
     test_filenames = [
-        "data/20170929_1.png.sample.pkl.14"]
+        "data/20170929_1.png.sample.pkl.1"]
+    model_filename = "models/classify_charpos.pkl"
 
-    def load_samples(filenames):
-        """helper"""
-
-        # load multiple files
-        line_poss = [y for x in filenames for y in util.load(x).result]
-
-        # get word images and verified character positions
-        word_ims = [word_pos.result
-                    for line_pos in line_poss
-                    for word_pos in line_pos.result.result
-                    if word_pos.result.verified]
-
-        # for each word image, extract images of the start character positions
-        # and positions in the middle of characters
-        extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
-        half_width = 8
-        extract_char_half_width = lambda x, im: extract_char((x - half_width, x + half_width), im)
-
-        def keep_valid(ims):
-            """keep images with width greater than 0"""
-            return [x for x in ims if x.shape[1] > 0]
-
-        def half(x, y):
-            """helper"""
-            return x + int((y - x) * 0.5)
-
-        # def width(x):
-        #     """helper"""
-        #     return x[1] - x[0]
-
-        # extract images from starts of all positions and ends of final
-        # position in each word
-        # (currently, start and end of adjacent characters are shared)
-
-        char_start_ims = keep_valid(
-            [extract_char_half_width(x.data[0], word_im.data)
-             for word_im in word_ims
-             for x in word_im.result
-             if x.result.result != "`" and x.result.verified] +
-            [extract_char_half_width(x.data[1], word_im.data)
-             for word_im in word_ims
-             for x in word_im.result[:-1]
-             if x.result.result != "`" and x.result.verified])
-
-        # extract images from half, one fourth, and three forths of the way
-        # between starts and ends of each position
-        char_middle_ims = keep_valid(
-            [extract_char_half_width(
-                half(x.data[0], x.data[1]), word_im.data)
-             for word_im in word_ims
-             for x in word_im.result
-             if x.result.result != "`" and x.result.verified] +
-            [extract_char_half_width(
-                half(x.data[0], half(x.data[0], x.data[1])), word_im.data)
-             for word_im in word_ims
-             for x in word_im.result
-             if x.result.result != "`" and x.result.verified] +
-            [extract_char_half_width(
-                half(half(x.data[0], x.data[1]), x.data[1]), word_im.data)
-             for word_im in word_ims
-             for x in word_im.result
-             if x.result.result != "`" and x.result.verified]
-        )
-
-        # import cv2
-        # for im in char_middle_ims:
-        #     print(im)
-        #     cv2.imshow("test", im)
-        #     cv2.waitKey()
-
-        data = char_start_ims + char_middle_ims
-        labels = [True] * len(char_start_ims) + [False] * len(char_middle_ims)
-
-        return data, labels
+    half_width = 8
 
     print("loading and balancing datasets...")
 
     # load training set
-    data_train_unbalanced, labels_train_unbalanced = load_samples(
-        train_filenames)
+    data_train_unbalanced, labels_train_unbalanced = _load_samples(
+        train_filenames, half_width)
 
     print(
         "training group sizes before balancing:",
@@ -152,13 +188,13 @@ def main():
              data_train_unbalanced, labels_train_unbalanced)])
 
     # balance classes in training set
-    balance_factor = 1000 # 2000
+    balance_factor = 2000
     data_train, labels_train = cml.balance(
         data_train_unbalanced, labels_train_unbalanced,
         balance_factor, cml.transform_random)
 
     # load test set
-    data_test, labels_test = load_samples(test_filenames)
+    data_test, labels_test = _load_samples(test_filenames, half_width)
 
     test_gr = dict(cml.group_by_label(data_test, labels_test))
     test_grf = test_gr
@@ -180,41 +216,83 @@ def main():
         [(x[0], len(x[1]))
          for x in cml.group_by_label(data_test, labels_test)])
 
-    print("training model...")
+    if mode == "train":
 
-    proc = build_process(
-        data_train, labels_train)
+        print("training model...")
 
-    (classify_char_pos,
-     prep_image, feat_extractor, feat_selector,
-     classifier, classifier_score) = proc
+        proc = build_classification_process(
+            data_train, labels_train)
 
-    print("done")
+        (classify_char_pos,
+         prep_image, feat_extractor, feat_selector,
+         classifier, classifier_score) = proc
 
-    feats_test = feat_selector([feat_extractor(x) for x in data_test])
-    print("score on test dataset", classifier_score(feats_test, labels_test))
+        print("done")
 
-    labels_test_pred = classify_char_pos(data_test)
-    print("confusion matrix:")
-    print(sklearn.metrics.confusion_matrix(
-        labels_test, labels_test_pred, [True, False]))
-    # TODO: visualize ROC curves
-    util.save_dill(proc, "models/classify_charpos.pkl")
-
-    if VISUALIZE:
+        # feats_test = feat_selector([feat_extractor(x) for x in data_test])
+        # print("score on test dataset:", classifier_score(feats_test, labels_test))
         labels_test_pred = classify_char_pos(data_test)
-        chars_confirmed = []
-        chars_redo = []
+        print("score on test dataset:", sklearn.metrics.accuracy_score(labels_test, labels_test_pred))
 
-        # show results
-        for cur_label, group in cml.group_by_label(data_test, labels_test_pred):
-            print(cur_label)
-            group_prepped = [(prep_image(x), None) for x in group]
-            group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
-            chars_working, chars_done = charclass.label_chars(group_pred)
-            chars_confirmed += chars_working
-            chars_redo += chars_done
+        print("confusion matrix:")
+        print(sklearn.metrics.confusion_matrix(
+            labels_test, labels_test_pred, [True, False]))
+
+        # TODO: visualize ROC curve
+
+        util.save_dill(proc, model_filename)
+
+        if VISUALIZE:
+            labels_test_pred = classify_char_pos(data_test)
+            chars_confirmed = []
+            chars_redo = []
+
+            # show results
+            for cur_label, group in cml.group_by_label(data_test, labels_test_pred):
+                print(cur_label)
+                group_prepped = [(prep_image(x), None) for x in group]
+                group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
+                chars_working, chars_done = charclass.label_chars(group_pred)
+                chars_confirmed += chars_working
+                chars_redo += chars_done
+
+    if mode == "tune":
+
+        # test different position finding methods using a distance function
+        # on each word
+
+        classify_char_pos = util.load_dill(model_filename)[0]
+
+        extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
+        find_char_poss = lambda word_im: findletters.find_classify(
+            word_im, half_width, extract_char, classify_char_pos)
+
+        print("loading test words...", end="", flush=True)
+        word_ims_test = _load_words(test_filenames)
+        print("done")
+
+        distances = []
+        for word_im in word_ims_test:
+            positions = findletters.position_list_distance(
+                [x.data for x in word_im.result],
+                findletters.find_thresh_peaks(word_im.data))
+            distances.append(positions)
+            print(".", end="", flush=True)
+
+        print("position distance score (peaks):", np.sum(
+            [y for x in distances for y in x]))
+
+        distances = []
+        for word_im in word_ims_test:
+            positions = findletters.position_list_distance(
+                [x.data for x in word_im.result],
+                find_char_poss(word_im.data))
+            distances.append(positions)
+            print(".", end="", flush=True)
+
+        print("position distance score (ML):", np.sum(
+            [y for x in distances for y in x]))
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv)

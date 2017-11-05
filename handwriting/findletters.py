@@ -1,11 +1,12 @@
 """
 
-Find positions of letters in images of words or a single word.
+Find positions of characters in images of words or a single word.
 
 """
 
 # Copyright (c) 2017 Ben Zimmer. All rights reserved.
 
+# TODO: rename to "findcharacters.py"
 
 import numpy as np
 
@@ -49,6 +50,28 @@ def find_thresh_peaks(word_image):
     return gaps_to_positions(gaps)
 
 
+def find_classify(word_im, half_width, extract_char, classify_char_pos):
+    """find character positions using a classifier"""
+
+    char_poss = []
+    run = []
+    for x in range(2, word_im.shape[1] - 2, 1): # step 2
+        test_range = (x - half_width, x + half_width)
+        test_im = extract_char(test_range, word_im)
+        # print("testing", test_range, test_im.shape)
+        if classify_char_pos([test_im])[0]:
+            run.append(x)
+        else:
+            if len(run) > 1:
+                char_poss.append(int(np.mean(run)))
+                run = []
+    if len(run) > 1:
+        char_poss.append(int(np.mean(run)))
+        run = []
+
+    return gaps_to_positions([0] + char_poss + [word_im.shape[1] - 1])
+
+
 def gaps_to_positions(gaps):
     """helper"""
     positions = [(x, y) for x, y in list(zip(gaps[:-1], gaps[1:]))
@@ -62,3 +85,30 @@ def positions_to_gaps(positions):
         return [positions[0][0], positions[0][1]]
     else:
         return [positions[0][0]] + [int(0.5 * (x[1] + y[0])) for x, y in list(zip(positions[:-1], positions[1:]))] + [positions[-1][1]]
+
+
+def position_distance(pos1, pos2):
+    """calcate a distance score between two positions"""
+    return np.square(pos2[0] - pos1[0]) + np.square(pos2[1] - pos1[1])
+
+
+def position_list_distance(positions_true, positions_test):
+    """calculate a distance score between two sets of character positions"""
+
+    # for each true position, find the closest position in the test
+    # positions. final score is RMSE of these distances
+
+    distances = np.zeros(len(positions_true))
+    closest_idxs = np.zeros(len(positions_true), dtype=np.int)
+    for idx, pos_true in enumerate(positions_true):
+        # find the closest distance in the other set
+        pos_true_to_positions_test = [position_distance(pos_true, x)
+                                      for x in positions_test]
+        closest_idx = np.argmin(pos_true_to_positions_test)
+        closest_idxs[idx] = closest_idx
+        distances[idx] = pos_true_to_positions_test[closest_idx]
+
+    print(".", end="")
+
+    # return np.sqrt(np.mean(np.square(scores)))
+    return distances
