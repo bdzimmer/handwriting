@@ -8,11 +8,12 @@ Train a character classifier.
 # Copyright (c) 2017 Ben Zimmer. All rights reserved.
 
 import random
+import sys
 
 import numpy as np
 import sklearn
 
-from handwriting import charclassml as cml, util, charclass
+from handwriting import charclassml as cml, util, charclass, ml
 from handwriting.prediction import Sample
 
 VISUALIZE = False
@@ -40,8 +41,13 @@ def _load_samples(filenames):
     return [x.result.data for x in char_poss], [x.result.result for x in char_poss]
 
 
-def main():
+def main(argv):
     """main program"""
+
+    if len(argv) < 2:
+        mode = "tune"
+    else:
+        mode = argv[1]
 
     np.random.seed(0)
     random.seed(0)
@@ -49,7 +55,7 @@ def main():
     model_filename = "models/classify_characters.pkl"
     min_label_examples = 1
     remove_labels = ["\"", "!", "/", "~"]
-    balance_factor = 50
+    balance_factor = 100
     support_ratio_max = 0.9
 
     sample_filenames = ["data/20170929_" + str(idx) + ".png.sample.pkl.1"
@@ -65,7 +71,7 @@ def main():
     # eliminate groups from training and test
     # where we have less than a certain number of samples or they aren't
     # characters that we currently want to train on
-    train_gr = dict(cml.group_by_label(
+    train_gr = dict(ml.group_by_label(
         data_train_unbalanced, labels_train_unbalanced))
     keep_labels = sorted(
         [x for x, y in train_gr.items()
@@ -79,18 +85,18 @@ def main():
     print(
         "training group sizes before balancing:",
         [(x[0], len(x[1]))
-         for x in cml.group_by_label(
+         for x in ml.group_by_label(
              data_train_unbalanced, labels_train_unbalanced)])
 
     # balance classes in training set
-    data_train, labels_train = cml.balance(
+    data_train, labels_train = ml.balance(
         data_train_unbalanced, labels_train_unbalanced,
-        balance_factor, cml.transform_random)
+        balance_factor, ml.transform_random)
 
     # load test set
     data_test, labels_test = _load_samples(test_filenames)
 
-    test_gr = dict(cml.group_by_label(data_test, labels_test))
+    test_gr = dict(ml.group_by_label(data_test, labels_test))
     test_grf = {x: y for x, y in test_gr.items() if x in keep_labels}
     data_test, labels_test = zip(*[
         (y, x[0]) for x in test_grf.items() for y in x[1]])
@@ -103,58 +109,84 @@ def main():
     print(
         "training group sizes:",
         [(x[0], len(x[1]))
-         for x in cml.group_by_label(data_train, labels_train)])
+         for x in ml.group_by_label(data_train, labels_train)])
 
     print(
         "test group sizes:",
         [(x[0], len(x[1]))
-         for x in cml.group_by_label(data_test, labels_test)])
+         for x in ml.group_by_label(data_test, labels_test)])
 
-    print("training model...")
+    if mode == "train":
 
-    proc = cml.build_current_best_process(
-        data_train, labels_train, support_ratio_max)
+        print("training model...")
 
-    (classify_char_image,
-     prep_image, feat_extractor, feat_selector,
-     classifier, classifier_score) = proc
+        proc = cml.build_current_best_process(
+            data_train, labels_train, support_ratio_max)
 
-    print("done")
+        (classify_char_image,
+         prep_image, feat_extractor, feat_selector,
+         classifier, classifier_score) = proc
 
-    # feats_test = feat_selector([feat_extractor(x) for x in data_test])
-    # print("score on test dataset:", classify_char_image(feats_test, labels_test))
-    labels_test_pred = classify_char_image(data_test)
-    print("score on test dataset:", sklearn.metrics.accuracy_score(labels_test, labels_test_pred))
+        print("done")
 
-    print("confusion matrix:")
-    confusion_mat = sklearn.metrics.confusion_matrix(
-        labels_test, labels_test_pred, keep_labels)
-    print(confusion_mat)
-    np.savetxt(
-        model_filename + ".confusion.tsv",
-        confusion_mat,
-        fmt="%d",
-        delimiter="\t",
-        header="\t".join(keep_labels))
-
-    # TODO: visualize ROC curves
-
-    util.save_dill(proc, model_filename)
-
-    if VISUALIZE:
+        # feats_test = feat_selector([feat_extractor(x) for x in data_test])
+        # print("score on test dataset:", classify_char_image(feats_test, labels_test))
         labels_test_pred = classify_char_image(data_test)
-        chars_confirmed = []
-        chars_redo = []
+        print("score on test dataset:", sklearn.metrics.accuracy_score(labels_test, labels_test_pred))
 
-        # show results
-        for cur_label, group in cml.group_by_label(data_test, labels_test_pred):
-            print(cur_label)
-            group_prepped = [(prep_image(x), None) for x in group]
-            group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
-            chars_working, chars_done = charclass.label_chars(group_pred)
-            chars_confirmed += chars_working
-            chars_redo += chars_done
+        print("confusion matrix:")
+        confusion_mat = sklearn.metrics.confusion_matrix(
+            labels_test, labels_test_pred, keep_labels)
+        print(confusion_mat)
+        np.savetxt(
+            model_filename + ".confusion.tsv",
+            confusion_mat,
+            fmt="%d",
+            delimiter="\t",
+            header="\t".join(keep_labels))
+
+        # TODO: visualize ROC curves
+
+        util.save_dill(proc, model_filename)
+
+        if VISUALIZE:
+            labels_test_pred = classify_char_image(data_test)
+            chars_confirmed = []
+            chars_redo = []
+
+            # show results
+            for cur_label, group in ml.group_by_label(data_test, labels_test_pred):
+                print(cur_label)
+                group_prepped = [(prep_image(x), None) for x in group]
+                group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
+                chars_working, chars_done = charclass.label_chars(group_pred)
+                chars_confirmed += chars_working
+                chars_redo += chars_done
+
+    if mode == "tune":
+
+        classify_char_image = util.load_dill(model_filename)[0]
+
+        # evaluate score by label
+        for label in keep_labels:
+
+            keep_idxs = [idx for idx, lbl in enumerate(labels_test)
+                         if lbl == label]
+
+            data_test_subset = [data_test[idx] for idx in keep_idxs]
+            labels_test_subset = [labels_test[idx] for idx in keep_idxs]
+            labels_test_pred_subset = [classify_char_image([x])[0] for x in data_test_subset]
+
+            preds_grouped_counts = ml.group_by_label(
+                data_test_subset, labels_test_pred_subset)
+
+            # print(labels_test_pred_subset)
+
+            score = sklearn.metrics.accuracy_score(labels_test_subset, labels_test_pred_subset)
+            print(
+                label, "\t", np.round(score, 3), "\t", len(keep_idxs), "\t",
+                [(x[0], len(x[1])) for x in reversed(preds_grouped_counts)])
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv)

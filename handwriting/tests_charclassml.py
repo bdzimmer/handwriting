@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 
-Unit tests for character classification.
+Integration test for character classification.
 
 """
 
@@ -11,10 +11,9 @@ Unit tests for character classification.
 import string
 import unittest
 
-import cv2
 import numpy as np
 
-from handwriting import charclassml as cml, analysisimage, charclass
+from handwriting import charclassml as cml, analysisimage, charclass, ml
 from handwriting.prediction import Sample
 
 VISUALIZE = False
@@ -22,64 +21,7 @@ VISUALIZE = False
 
 class TestsCharClassML(unittest.TestCase):
 
-    """Unit tests for character classification."""
-
-    def test_balance(self):
-        """test dataset balancing functionality"""
-
-        data, labels = zip(*([(0.0, "a")] * 4 + [(1.0, "b")] * 1))
-
-        balanced_data, balanced_labels = cml.balance(
-            data, labels, 0.5, lambda x: x)
-        balanced_grouped = dict(cml.group_by_label(
-            balanced_data, balanced_labels))
-        for label, group in balanced_grouped.items():
-            self.assertEqual(len(group), 2)
-
-        balanced_data, balanced_labels = cml.balance(
-            data, labels, 8, lambda x: x)
-        balanced_grouped = dict(cml.group_by_label(
-            balanced_data, balanced_labels))
-        for label, group in balanced_grouped.items():
-            self.assertEqual(len(group), 8)
-
-
-    def test_pad_image(self):
-        """test function to pad an image"""
-
-        # image is smaller in both dimensions
-        image = np.ones((8, 8, 3), dtype=np.uint8) * (0, 0, 255)
-        image_padded = cml.pad_image(image, 16, 16)
-        self.assertEqual(image_padded.shape, (16, 16, 3))
-
-        if VISUALIZE:
-            image_both = np.zeros((16, 32, 3), dtype=np.uint8)
-            image_both[0:image.shape[0], 0:image.shape[1], :] = image
-            image_both[0:image_padded.shape[0], 16:(image_padded.shape[1] + 16)] = image_padded
-            cv2.namedWindow("padding", cv2.WINDOW_NORMAL)
-            cv2.imshow("padding", image_both)
-            cv2.waitKey()
-
-        # image is larger in both dimensions
-        image = np.ones((16, 16, 3), dtype=np.uint8) * (0, 0, 255)
-        image_padded = cml.pad_image(image, 8, 8)
-        self.assertEqual(image_padded.shape, (8, 8, 3))
-
-        # image is larger in x dimension
-        image = np.ones((8, 16, 3), dtype=np.uint8) * (0, 0, 255)
-        image_padded = cml.pad_image(image, 8, 8)
-        self.assertEqual(image_padded.shape, (8, 8, 3))
-
-        # image is larger in y dimension
-        image = np.ones((16, 8, 3), dtype=np.uint8) * (0, 0, 255)
-        image_padded = cml.pad_image(image, 8, 8)
-        self.assertEqual(image_padded.shape, (8, 8, 3))
-
-        # image is same in both dimensions
-        image = np.ones((8, 8, 3), dtype=np.uint8) * (0, 0, 255)
-        image_padded = cml.pad_image(image, 8, 8)
-        self.assertEqual(image_padded.shape, (8, 8, 3))
-
+    """Integration test for character classification."""
 
     def test_process(self):
         """test the full classification process"""
@@ -88,11 +30,11 @@ class TestsCharClassML(unittest.TestCase):
 
         data_single, labels_single = _generate_samples()
 
-        # perturb to create 40 examples of each label
+        # perturb to create 10 examples of each label
         balance_factor = 10
-        data, labels = cml.balance(
+        data, labels = ml.balance(
             data_single, labels_single,
-            balance_factor, cml.transform_random)
+            balance_factor, ml.transform_random)
 
         # split 75% / 25%  into training and test set
         train_count = int(balance_factor * 0.75)
@@ -118,7 +60,7 @@ class TestsCharClassML(unittest.TestCase):
         print("training model")
 
         res = cml.build_current_best_process(
-            data_train, labels_train, support_ratio_max=0.95)
+            data_train, labels_train, support_ratio_max=0.97)
 
         (classify_char_image,
          prep_image, feat_extractor, feat_selector,
@@ -138,7 +80,7 @@ class TestsCharClassML(unittest.TestCase):
             chars_confirmed = []
             chars_redo = []
             # show results
-            for cur_label, group in cml.group_by_label(data_test, labels_test_pred):
+            for cur_label, group in ml.group_by_label(data_test, labels_test_pred):
                 print(cur_label)
                 group_prepped = [(prep_image(x), None) for x in group]
                 group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]

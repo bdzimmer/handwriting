@@ -14,7 +14,7 @@ import sys
 import numpy as np
 import sklearn
 
-from handwriting import charclassml as cml, util, charclass
+from handwriting import util, charclass, ml
 from handwriting import findletters, findwords
 from handwriting.prediction import Sample
 
@@ -27,7 +27,7 @@ def build_classification_process(data_train, labels_train):
 
     # A lot of this is reused from the character classification process
 
-    pad_image_96 = lambda x: cml.pad_image(x, 96, 96)
+    pad_image_96 = lambda x: ml.pad_image(x, 96, 96)
 
     def prep_image(image):
         """prepare an image (result can still be visualized as an image)"""
@@ -36,23 +36,28 @@ def build_classification_process(data_train, labels_train):
         image = image[start_row:, :]
         # return cml._align(cml._filter_cc(pad_image_96(image)))
         # return pad_image_96(image)
-        return cml._align(pad_image_96(image))
+        return ml._align(pad_image_96(image))
 
     def feat_extractor(image):
         """convert image to feature vector"""
-        p_img = prep_image(image)
-        # return cml._downsample_4(p_img)
-        # return cml._max_pool_multi(p_img, [2, 3, 4])
-        return cml._downsample_multi(p_img, [0.5, 0.25, 0.125])
+        img_p = prep_image(image)
+        img_g = ml.grayscale(img_p)
+        # return ml._downsample_4(img_g)
+        # return ml._max_pool_multi(img_g, [2, 3, 4])
+        # grad_0, grad_1 = np.gradient(img_g)
+        # return np.hstack((
+        #     ml._max_pool_multi(grad_0, [2, 3, 4]),
+        #     ml._max_pool_multi(grad_1, [2, 3, 4])))
+        return ml._downsample_multi(img_g, [0.5, 0.25, 0.125])
 
     feats_train = [feat_extractor(x) for x in data_train]
-    feat_selector = cml.build_feat_selection_pca(feats_train, 0.94)
+    feat_selector = ml.build_feat_selection_pca(feats_train, 0.94)
     feats_train = feat_selector(feats_train)
 
-    classifier, classifier_score = cml.train_char_class_svc(
-        feats_train, labels_train, n_splits=4, support_ratio_max=0.6)
+    classifier, classifier_score = ml.train_svc_classifier(
+        feats_train, labels_train, n_splits=10, support_ratio_max=0.6)
 
-    classify_char_image = cml.build_classification_process(
+    classify_char_image = ml.build_classification_process(
         feat_extractor, feat_selector, classifier)
 
     return (classify_char_image,
@@ -171,7 +176,7 @@ def main(argv):
 
     model_filename = "models/classify_charpos.pkl"
     half_width = 8
-    balance_factor = 2000
+    balance_factor = 500
 
     sample_filenames = ["data/20170929_" + str(idx) + ".png.sample.pkl.1"
                         for idx in range(1, 6)]
@@ -187,18 +192,18 @@ def main(argv):
     print(
         "training group sizes before balancing:",
         [(x[0], len(x[1]))
-         for x in cml.group_by_label(
+         for x in ml.group_by_label(
              data_train_unbalanced, labels_train_unbalanced)])
 
     # balance classes in training set
-    data_train, labels_train = cml.balance(
+    data_train, labels_train = ml.balance(
         data_train_unbalanced, labels_train_unbalanced,
-        balance_factor, cml.transform_random)
+        balance_factor, ml.transform_random)
 
     # load test set
     data_test, labels_test = _load_samples(test_filenames, half_width)
 
-    test_gr = dict(cml.group_by_label(data_test, labels_test))
+    test_gr = dict(ml.group_by_label(data_test, labels_test))
     test_grf = test_gr
     data_test, labels_test = zip(*[
         (y, x[0]) for x in test_grf.items() for y in x[1]])
@@ -211,12 +216,12 @@ def main(argv):
     print(
         "training group sizes:",
         [(x[0], len(x[1]))
-         for x in cml.group_by_label(data_train, labels_train)])
+         for x in ml.group_by_label(data_train, labels_train)])
 
     print(
         "test group sizes:",
         [(x[0], len(x[1]))
-         for x in cml.group_by_label(data_test, labels_test)])
+         for x in ml.group_by_label(data_test, labels_test)])
 
     if mode == "train":
 
@@ -250,7 +255,7 @@ def main(argv):
             chars_redo = []
 
             # show results
-            for cur_label, group in cml.group_by_label(data_test, labels_test_pred):
+            for cur_label, group in ml.group_by_label(data_test, labels_test_pred):
                 print(cur_label)
                 group_prepped = [(prep_image(x), None) for x in group]
                 group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
