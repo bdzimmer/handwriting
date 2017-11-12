@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 
 from handwriting import analysisimage, annotate, driver
-from handwriting import findletters, charclass, charclassml, util
+from handwriting import findletters, charclass, ml, util
 from handwriting.prediction import Sample
 
 
@@ -217,7 +217,7 @@ def _mutate_verify_multi(
 
                 patch_width = 96
                 patch_height = 96
-                pad = lambda x: charclassml.pad_image(x, patch_width, patch_height)
+                pad = lambda x: ml.pad_image(x, patch_width, patch_height)
                 # TODO: most of this logic is to deal with the charclass interface
                 def pad_preds(preds):
                     """helper"""

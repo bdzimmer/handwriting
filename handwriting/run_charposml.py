@@ -8,6 +8,7 @@ a letter or between letters.
 
 # Copyright (c) 2017 Ben Zimmer. All rights reserved.
 
+from functools import partial
 import random
 import sys
 
@@ -34,7 +35,7 @@ def build_classification_process(data_train, labels_train):
         # start_row = 16
         start_row = 32
         image = image[start_row:, :]
-        # return cml._align(cml._filter_cc(pad_image_96(image)))
+        # return ml._align(ml._filter_cc(pad_image_96(image)))
         # return pad_image_96(image)
         return ml._align(pad_image_96(image))
 
@@ -42,20 +43,32 @@ def build_classification_process(data_train, labels_train):
         """convert image to feature vector"""
         img_p = prep_image(image)
         img_g = ml.grayscale(img_p)
+        # return ml._max_pool_multi(img_g, [3, 4])
         # return ml._downsample_4(img_g)
-        # return ml._max_pool_multi(img_g, [2, 3, 4])
+        # return ml._downsample_multi(img_g, [0.125])# [0.5, 0.25, 0.125])
         # grad_0, grad_1 = np.gradient(img_g)
+        grad_0, grad_1 = np.gradient(ml._max_pool(img_g))
+        grad_0 = np.abs(grad_0)
+        grad_1 = np.abs(grad_1)
+        return np.hstack((np.ravel(grad_0), np.ravel(grad_1)))
         # return np.hstack((
-        #     ml._max_pool_multi(grad_0, [2, 3, 4]),
-        #     ml._max_pool_multi(grad_1, [2, 3, 4])))
-        return ml._downsample_multi(img_g, [0.5, 0.25, 0.125])
+        #     ml._max_pool_multi(grad_0, [2]),
+        #     ml._max_pool_multi(grad_1, [2])))
 
     feats_train = [feat_extractor(x) for x in data_train]
-    feat_selector = ml.build_feat_selection_pca(feats_train, 0.94)
+    feat_selector = ml.build_feat_selection_pca(feats_train, 0.94) # 0.94
     feats_train = feat_selector(feats_train)
 
-    classifier, classifier_score = ml.train_svc_classifier(
-        feats_train, labels_train, n_splits=10, support_ratio_max=0.6)
+    classifier, classifier_score = ml.train_classifier(
+        fit_model=partial(
+            ml.build_svc_fit,
+            support_ratio_max=0.8),
+        score_func=ml.score_accuracy,
+        n_splits=4,
+        feats=feats_train,
+        labels=labels_train,
+        c=np.logspace(1, 2, 4),
+        gamma=np.logspace(-2, 0, 7))
 
     classify_char_image = ml.build_classification_process(
         feat_extractor, feat_selector, classifier)
@@ -106,7 +119,7 @@ def _load_samples(filenames, half_width):
                 if word_pos.result.verified]
 
     # helper functions for extracting images
-    extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
+    extract_char = lambda cpos, im: im[:, np.maximum(cpos[0], 0):cpos[1]]
     extract_char_half_width = lambda x, im: extract_char((x - half_width, x + half_width), im)
 
     def keep_valid(ims):
@@ -117,49 +130,45 @@ def _load_samples(filenames, half_width):
         """point halfway between two points"""
         return int((x + y) * 0.5)
 
-    # extract images from starts of all positions and ends of final
-    # position in each word
-    # (currently, start and end of adjacent characters are shared)
-    char_start_ims = keep_valid(
-        [extract_char_half_width(x.data[0], word_im.data)
-         for word_im in word_ims
-         for x in word_im.result
-         if x.result.result != "`" and x.result.verified] +
-        [extract_char_half_width(x.data[1], word_im.data)
-         for word_im in word_ims
-         for x in word_im.result[:-1]
-         if x.result.result != "`" and x.result.verified])
+    def extract(extract_func):
+        """extract images from valid char positions using extract_func"""
+        res = [(extract_func(char_pos.data, word_im.data), char_pos.result.result, char_pos.data, word_im.data)
+                for word_im in word_ims
+                for char_pos in word_im.result
+                if char_pos.result.result != "`"
+                and char_pos.result.verified
+                and (char_pos.data[1] - char_pos.data[0]) > 1]
+        return res
 
-    # extract images from half, one fourth, and three forths of the way
+    # extract images from the ends of all positions in each word
+    char_start_ims = (
+        extract(lambda x, y: extract_char_half_width(x[1], y)) +
+        extract(lambda x, y: extract_char_half_width(x[1] + 1, y)) +
+        extract(lambda x, y: extract_char_half_width(x[1] - 1, y)))
+
+    # extract images from half, one fourth, and three fourths of the way
     # between starts and ends of each position
-    char_middle_ims = keep_valid(
-        [extract_char_half_width(
-            half(x.data[0], x.data[1]), word_im.data)
-         for word_im in word_ims
-         for x in word_im.result
-         if x.result.result != "`" and x.result.verified] +
-        [extract_char_half_width(
-            half(x.data[0], half(x.data[0], x.data[1])), word_im.data)
-         for word_im in word_ims
-         for x in word_im.result
-         if x.result.result != "`" and x.result.verified] +
-        [extract_char_half_width(
-            half(half(x.data[0], x.data[1]), x.data[1]), word_im.data)
-         for word_im in word_ims
-         for x in word_im.result
-         if x.result.result != "`" and x.result.verified]
-    )
+    char_middle_ims = (
+        extract(lambda x, y: extract_char_half_width(
+            half(x[0], x[1]), y)) +
+        extract(lambda x, y: extract_char_half_width(
+            half(x[0], half(x[0], x[1])), y)) +
+        extract(lambda x, y: extract_char_half_width(
+            half(half(x[0], x[1]), x[1]), y)))
 
     # import cv2
-    # for im in char_middle_ims:
-    #     print(im)
-    #     cv2.imshow("test", im)
+    # for im in char_start_ims:
+    #     print(im[0].shape, im[1], im[2], half(im[2][0], im[2][1]), im[3].shape)
+    #     cv2.imshow("test", im[0])
     #     cv2.waitKey()
 
-    data = char_start_ims + char_middle_ims
+    data_with_src = char_start_ims + char_middle_ims
     labels = [True] * len(char_start_ims) + [False] * len(char_middle_ims)
 
-    return data, labels
+    combined_labels = [(x, y[1]) for x, y in zip(labels, data_with_src)]
+
+    data = [x[0] for x in data_with_src]
+    return data, combined_labels
 
 
 
@@ -176,7 +185,7 @@ def main(argv):
 
     model_filename = "models/classify_charpos.pkl"
     half_width = 8
-    balance_factor = 500
+    balance_factor = 15 # 15 # 500
 
     sample_filenames = ["data/20170929_" + str(idx) + ".png.sample.pkl.1"
                         for idx in range(1, 6)]
@@ -217,7 +226,20 @@ def main(argv):
         "training group sizes:",
         [(x[0], len(x[1]))
          for x in ml.group_by_label(data_train, labels_train)])
+    print(
+        "test group sizes:",
+        [(x[0], len(x[1]))
+         for x in ml.group_by_label(data_test, labels_test)])
 
+    print("discarding letter information from labels")
+
+    labels_train = [x[0] for x in labels_train]
+    labels_test = [x[0] for x in labels_test]
+
+    print(
+        "training group sizes:",
+        [(x[0], len(x[1]))
+         for x in ml.group_by_label(data_train, labels_train)])
     print(
         "test group sizes:",
         [(x[0], len(x[1]))
@@ -239,7 +261,8 @@ def main(argv):
         # feats_test = feat_selector([feat_extractor(x) for x in data_test])
         # print("score on test dataset:", classifier_score(feats_test, labels_test))
         labels_test_pred = classify_char_pos(data_test)
-        print("score on test dataset:", sklearn.metrics.accuracy_score(labels_test, labels_test_pred))
+        print("score on test dataset:", sklearn.metrics.accuracy_score(
+            labels_test, labels_test_pred))
 
         print("confusion matrix:")
         print(sklearn.metrics.confusion_matrix(

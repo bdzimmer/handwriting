@@ -26,6 +26,12 @@ class TestsFunc(unittest.TestCase):
 
         self.assertEqual(piped("b"), "abcd")
 
+        piped = pipe(
+            lambda x, y: x + y,
+            lambda z: z * 2)
+
+        self.assertEqual(piped(2, 3), 10)
+
 
     def test_unzip(self):
         """test unzip"""

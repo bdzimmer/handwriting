@@ -15,11 +15,15 @@ def pipe(*funcs):
     """compose single argument functions left to right (evaluated
     right to left)"""
 
-    def piped(arg):
+    def piped(*args, **kwargs):
         """helper"""
-        for func in funcs:
+        arg = funcs[0](*args, **kwargs)
+        for func in funcs[1:]:
             arg = func(arg)
         return arg
+
+    piped.__signature__ = inspect.signature(funcs[0])
+
     return piped
 
 
@@ -34,6 +38,9 @@ def expand_params(param_values):
     # param_values - list of tuples of parameter names and lists of values
 
     n_params = len(param_values)
+
+    if n_params == 0:
+        return []
 
     param_counts = [len(x[1]) for x in param_values]
     idx = [0 for _ in param_counts]

@@ -6,15 +6,17 @@ Machine learning utility module.
 
 # Copyright (c) 2017 Ben Zimmer. All rights reserved.
 
-
-import itertools
+from functools import partial
 import random
 
 import cv2
 import numpy as np
+import sklearn
 from sklearn.decomposition import PCA
 from sklearn.model_selection import KFold
 from sklearn.svm import SVC
+
+from handwriting.func import grid_search, pipe
 
 
 def build_feat_selection_pca(feats, n_components):
@@ -32,22 +34,18 @@ def build_feat_selection_pca(feats, n_components):
     return select
 
 
-def train_svc_classifier(
-        feats, labels, n_splits, support_ratio_max):
-    """train an SVC classifier"""
+def cross_validation(n_splits):
 
-    # train SVC, tuning hyperparameters with k-fold cross validation
+    """Build a function to perform k-fold cross validation to fit
+    a model."""
+
     kfold = KFold(n_splits=n_splits, shuffle=True, random_state=1)
-    models = []
 
-    # these logspace params seem to work well for both of the current
-    # applications of SVC
-    hyps = itertools.product(
-        np.logspace(1, 2, 4),   # np.logspace(0, 2, 3)
-        np.logspace(-2, 0, 5))  # np.logspace(-3, 1, 5)
+    def cross_validate(fit_func, score_func, feats, labels):
 
-    for c, gamma in hyps:
-        svc_scores = []
+        """Perform the cross validation."""
+
+        scores = []
         for idxs_train, idxs_test in kfold.split(feats):
 
             feats_train = [feats[idx] for idx in idxs_train]
@@ -55,40 +53,102 @@ def train_svc_classifier(
             feats_test = [feats[idx] for idx in idxs_test]
             labels_test = [labels[idx] for idx in idxs_test]
 
-            print(np.round(c, 3), np.round(gamma, 3), ": ", end="", flush=True)
+            model = fit_func(
+                feats_train, labels_train)
 
-            svc = SVC(C=c, gamma=gamma, probability=True)
-            svc.fit(feats_train, labels_train)
+            score = score_func(model, feats_test, labels_test)
 
-            support_ratio = np.sum(svc.n_support_) / len(idxs_train)
-            if support_ratio > support_ratio_max:
-                print("bad support:", np.round(support_ratio, 4), "- skipping")
+            if score is None:
                 break
+            scores.append(score)
 
-            svc_score = svc.score(feats_test, labels_test)
-            print(np.round(svc_score, 4), np.round(support_ratio, 4))
-            svc_scores.append(svc_score)
+        if len(scores) == n_splits:
+            mean_score = np.mean(scores)
+            return mean_score
+        else:
+            return None
 
-        if len(svc_scores) == n_splits:
-            mean_svc_score = np.mean(svc_scores)
-            models.append(((c, gamma), mean_svc_score))
+    return cross_validate
 
-    # fit a model on all training data using the best parameters
-    (c, gamma), mean_svc_score = models[np.argmax([x[1] for x in models])]
-    print("best mean svc score:", mean_svc_score)
-    print("best hyperparameters:", c, gamma)
-    svc = SVC(C=c, gamma=gamma, probability=True)
-    svc.fit(feats, labels)
-    print("support vector counts:", list(zip(svc.classes_, svc.n_support_)))
+
+def build_svc_fit(
+        c, gamma, support_ratio_max):
+
+    """Build a function that fits an RBF SVC, returning None instead of the
+    model if the support ratio exceeds support_ratio_max."""
+
+    def svc_fit(feats_train, labels_train):
+
+        """Perform the fitting."""
+
+        print(np.round(c, 3), np.round(gamma, 3), ": ", end="", flush=True)
+
+        svc = SVC(C=c, gamma=gamma, probability=True)
+        svc.fit(feats_train, labels_train)
+
+        support_ratio = np.sum(svc.n_support_) / len(feats_train)
+        if support_ratio > support_ratio_max:
+            print("bad support:", np.round(support_ratio, 4), "- skipping")
+            return None
+
+        print(np.round(support_ratio, 4), end=" ")
+
+        return svc
+
+    return svc_fit
+
+
+def score_accuracy(model, feats_test, labels_test):
+
+    """geneneric sklearn model scoring using accuracy"""
+
+    if model is not None:
+        labels_test_pred = model.predict(feats_test)
+        score = sklearn.metrics.accuracy_score(labels_test, labels_test_pred)
+        print(np.round(score, 4))
+        return score
+    else:
+        return None
+
+# TODO: score AUC function
+
+
+def train_classifier(
+        fit_model, score_func, n_splits, feats, labels, **grid_search_params):
+
+    """train a classifier"""
+
+    cross_validate = partial(
+        cross_validation(n_splits),
+        score_func=score_func,
+        feats=feats,
+        labels=labels)
+
+    fit_model_with_cross_validation = pipe(
+        fit_model,
+        cross_validate)
+
+    models = grid_search(
+        fit_model_with_cross_validation,
+        **grid_search_params)
+    models = [x for x in models if x[1] is not None]
+
+    best_params, mean_score = models[np.argmax([x[1] for x in models])]
+
+    print("best mean score:", mean_score)
+    print("best hyperparameters:", best_params)
+    model = fit_model(**best_params)(feats, labels)
+
+    # print("support vector counts:", list(zip(model.classes_, model.n_support_)))
 
     def predict(feats_test):
         """helper"""
-        return svc.predict(feats_test)
+        return model.predict(feats_test)
 
     # TODO: write a general score function in the future
     def score(feats_test, labels_test):
         """helper"""
-        return svc.score(feats_test, labels_test)
+        return score_func(model, feats_test, labels_test)
 
     return predict, score
 
@@ -102,7 +162,6 @@ def build_classification_process(feat_extractor, feat_selector, classifier):
         return classifier(feats)
 
     return predict
-
 
 
 def pad_image(char_bmp, width, height):
@@ -211,8 +270,6 @@ def _downsample(image, scale_factor):
 
 def _downsample_4(image):
     """create a feature vector from four downsampling amounts"""
-    # TODO: move this to a higher level
-    # image_gray = _grayscale(image)
 
     return np.hstack((
         _downsample(image, 0.4),
@@ -223,8 +280,6 @@ def _downsample_4(image):
 
 def _downsample_multi(image, scales):
     """create a feature vector from arbitrary downsampling amounts"""
-    # TODO: move this to a higher level
-    # image_gray = _grayscale(image)
 
     return np.hstack([_downsample(image, x) for x in scales])
 
@@ -253,7 +308,7 @@ def _max_pool_multi(image, ns):
         res = [image]
     else:
         res = []
-    for n in range(2, max(ns)):
+    for n in range(2, max(ns) + 1):
         image = _max_pool(image)
         if n in ns:
             res.append(image)
