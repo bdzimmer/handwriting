@@ -12,6 +12,7 @@ from functools import partial
 import random
 import sys
 
+import cv2
 import numpy as np
 import sklearn
 
@@ -19,7 +20,7 @@ from handwriting import util, charclass, ml
 from handwriting import findletters, findwords
 from handwriting.prediction import Sample
 
-VISUALIZE = False
+VISUALIZE = True
 
 
 def build_classification_process(data_train, labels_train):
@@ -28,47 +29,70 @@ def build_classification_process(data_train, labels_train):
 
     # A lot of this is reused from the character classification process
 
-    pad_image_96 = lambda x: ml.pad_image(x, 96, 96)
+    pad_image = lambda x: ml.pad_image(x, 16, 104)
 
     def prep_image(image):
-        """prepare an image (result can still be visualized as an image)"""
-        # start_row = 16
-        start_row = 32
+        """prepare an image (result is still a 2d image)"""
+        start_row = 16 # 32
         image = image[start_row:, :]
-        # return ml._align(ml._filter_cc(pad_image_96(image)))
-        # return pad_image_96(image)
-        return ml._align(pad_image_96(image))
+        return 255.0 - ml.grayscale(ml._align(pad_image(image)))
 
     def feat_extractor(image):
         """convert image to feature vector"""
         img_p = prep_image(image)
-        img_g = ml.grayscale(img_p)
-        # return ml._max_pool_multi(img_g, [3, 4])
+        img_g = img_p / 255.0
+        # return np.ravel(img_g)
+        # return np.ravel(ml._max_pool(img_g))
+
+        # 2017-11-13: 3rd best
+        # return ml._max_pool_multi(img_g, [1, 2])
         # return ml._downsample_4(img_g)
         # return ml._downsample_multi(img_g, [0.125])# [0.5, 0.25, 0.125])
+
+        # 2017-11-13: 2nd best
         # grad_0, grad_1 = np.gradient(img_g)
-        grad_0, grad_1 = np.gradient(ml._max_pool(img_g))
-        grad_0 = np.abs(grad_0)
-        grad_1 = np.abs(grad_1)
-        return np.hstack((np.ravel(grad_0), np.ravel(grad_1)))
         # return np.hstack((
         #     ml._max_pool_multi(grad_0, [2]),
         #     ml._max_pool_multi(grad_1, [2])))
 
+        # 2017-11-13: best!
+        img_b = np.array(img_g * 255, dtype=np.uint8)
+        hog = cv2.HOGDescriptor(
+            (16, 104), (8, 8), (8, 8), (2, 2), 8)
+        return np.ravel(hog.compute(img_b))
+
+    if VISUALIZE:
+        # visualize training data
+        for cur_label, group in ml.group_by_label(data_train, labels_train):
+            print("label:", cur_label)
+            group_prepped = [(prep_image(x), None) for x in group]
+            # print(np.min(group_prepped[0][0]), np.max(group_prepped[0][0]))
+            group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
+            chars_working, chars_done = charclass.label_chars(group_pred)
+
     feats_train = [feat_extractor(x) for x in data_train]
-    feat_selector = ml.build_feat_selection_pca(feats_train, 0.94) # 0.94
+    feat_selector = ml.build_feat_selection_pca(feats_train, 0.95) # 0.90
+    # feat_selector = lambda x: x
+    # scaler = sklearn.preprocessing.RobustScaler()
+    # scaler.fit(feats_train)
+    # feat_selector = scaler.transform
+
     feats_train = feat_selector(feats_train)
+    print("feature length:", len(feats_train[0]))
 
     classifier, classifier_score = ml.train_classifier(
-        fit_model=partial(
-            ml.build_svc_fit,
-            support_ratio_max=0.8),
+        # fit_model=partial(
+        #     ml.build_svc_fit,
+        #     support_ratio_max=1.0),
+        fit_model=ml.build_linear_svc_fit,
         score_func=ml.score_accuracy,
-        n_splits=4,
+        n_splits=5,
         feats=feats_train,
         labels=labels_train,
-        c=np.logspace(1, 2, 4),
-        gamma=np.logspace(-2, 0, 7))
+        # c=[5.0], # np.logspace(-3, 1, 4),
+        c=np.logspace(-4, 1, 9),
+        # gamma=np.logspace(-2, 0, 20)
+    )
 
     classify_char_image = ml.build_classification_process(
         feat_extractor, feat_selector, classifier)
@@ -97,7 +121,6 @@ def _load_words(filenames):
                            for char_pos in word_im.result]) > 0
                 and np.sum([char_pos.result.verified
                             for char_pos in word_im.result]) == len(word_im.result)]
-
     # print the words
     for word_im in word_ims:
         print("".join([char_pos.result.result
@@ -108,6 +131,11 @@ def _load_words(filenames):
 
 def _load_samples(filenames, half_width):
     """load word image slices from multiple files"""
+
+    # potentially some problems in the current annotations
+    ignore_chars = ["`", "~", "?", "!", "(", ")",
+                    "\\", "/", "-", "4", "5", "*",
+                    ".", ",", ":", "\"", "'"]
 
     # load multiple files
     line_poss = [y for x in filenames for y in util.load(x).result]
@@ -132,38 +160,33 @@ def _load_samples(filenames, half_width):
 
     def extract(extract_func):
         """extract images from valid char positions using extract_func"""
-        res = [(extract_func(char_pos.data, word_im.data), char_pos.result.result, char_pos.data, word_im.data)
-                for word_im in word_ims
-                for char_pos in word_im.result
-                if char_pos.result.result != "`"
-                and char_pos.result.verified
-                and (char_pos.data[1] - char_pos.data[0]) > 1]
+        res = [(extract_func(char_pos.data, word_im.data),
+                char_pos.result.result, char_pos.data, word_im.data)
+               for word_im in word_ims
+               for char_pos in word_im.result
+               if (char_pos.result.result not in ignore_chars)
+               and char_pos.result.verified
+               and (char_pos.data[1] - char_pos.data[0]) > 1]
         return res
 
     # extract images from the ends of all positions in each word
-    char_start_ims = (
-        extract(lambda x, y: extract_char_half_width(x[1], y)) +
-        extract(lambda x, y: extract_char_half_width(x[1] + 1, y)) +
-        extract(lambda x, y: extract_char_half_width(x[1] - 1, y)))
+    char_end_ims = (
+        extract(lambda x, y: extract_char_half_width(x[1], y)))
+        # extract(lambda x, y: extract_char_half_width(x[1] + 1, y)) +
+        # extract(lambda x, y: extract_char_half_width(x[1] - 1, y)))
 
     # extract images from half, one fourth, and three fourths of the way
     # between starts and ends of each position
     char_middle_ims = (
         extract(lambda x, y: extract_char_half_width(
-            half(x[0], x[1]), y)) +
-        extract(lambda x, y: extract_char_half_width(
-            half(x[0], half(x[0], x[1])), y)) +
-        extract(lambda x, y: extract_char_half_width(
-            half(half(x[0], x[1]), x[1]), y)))
+            half(x[0], x[1]), y)))
+        # extract(lambda x, y: extract_char_half_width(
+        #     half(x[0], half(x[0], x[1])), y)) +
+        # extract(lambda x, y: extract_char_half_width(
+        #     half(half(x[0], x[1]), x[1]), y)))
 
-    # import cv2
-    # for im in char_start_ims:
-    #     print(im[0].shape, im[1], im[2], half(im[2][0], im[2][1]), im[3].shape)
-    #     cv2.imshow("test", im[0])
-    #     cv2.waitKey()
-
-    data_with_src = char_start_ims + char_middle_ims
-    labels = [True] * len(char_start_ims) + [False] * len(char_middle_ims)
+    data_with_src = char_end_ims + char_middle_ims
+    labels = [True] * len(char_end_ims) + [False] * len(char_middle_ims)
 
     combined_labels = [(x, y[1]) for x, y in zip(labels, data_with_src)]
 
@@ -185,7 +208,7 @@ def main(argv):
 
     model_filename = "models/classify_charpos.pkl"
     half_width = 8
-    balance_factor = 15 # 15 # 500
+    balance_factor = 64 # 20 # 15 # 500
 
     sample_filenames = ["data/20170929_" + str(idx) + ".png.sample.pkl.1"
                         for idx in range(1, 6)]
@@ -207,7 +230,11 @@ def main(argv):
     # balance classes in training set
     data_train, labels_train = ml.balance(
         data_train_unbalanced, labels_train_unbalanced,
-        balance_factor, ml.transform_random)
+        balance_factor,
+        # ml.transform_random
+        partial(
+            ml.transform_random,
+            trans_size=0.0, rot_size=0.1))
 
     # load test set
     data_test, labels_test = _load_samples(test_filenames, half_width)
@@ -254,13 +281,14 @@ def main(argv):
 
         (classify_char_pos,
          prep_image, feat_extractor, feat_selector,
-         classifier, classifier_score) = proc
+         classifier, model) = proc
 
         print("done")
 
-        # feats_test = feat_selector([feat_extractor(x) for x in data_test])
+        feats_test = feat_selector([feat_extractor(x) for x in data_test])
         # print("score on test dataset:", classifier_score(feats_test, labels_test))
-        labels_test_pred = classify_char_pos(data_test)
+        # labels_test_pred = classify_char_pos(data_test)
+        labels_test_pred = model.predict(feats_test)
         print("score on test dataset:", sklearn.metrics.accuracy_score(
             labels_test, labels_test_pred))
 
@@ -268,12 +296,36 @@ def main(argv):
         print(sklearn.metrics.confusion_matrix(
             labels_test, labels_test_pred, [True, False]))
 
-        # TODO: visualize ROC curve
 
         util.save_dill(proc, model_filename)
 
         if VISUALIZE:
-            labels_test_pred = classify_char_pos(data_test)
+
+            # visualize ROC curve
+            from matplotlib import pyplot as plt
+
+            distances_test = model.decision_function(feats_test)
+            fpr, tpr, _ = sklearn.metrics.roc_curve(
+                labels_test, distances_test)
+            roc_auc = sklearn.metrics.auc(fpr, tpr)
+
+            plt.figure()
+            plt.plot(
+                fpr, tpr, color="red",
+                lw=2, label="ROC curve (area = " + str(roc_auc) + ")")
+            plt.plot([0, 1], [0, 1], color="blue", lw=2, linestyle='--')
+            plt.xlim([0.0, 1.0])
+            plt.ylim([0.0, 1.05])
+            plt.xlabel("FPR")
+            plt.ylabel("TPR")
+            plt.title("ROC")
+            plt.legend(loc="lower right")
+            plt.show()
+
+
+            # visualize result images
+
+            # labels_test_pred = classify_char_pos(data_test)
             chars_confirmed = []
             chars_redo = []
 
@@ -319,7 +371,8 @@ def main(argv):
         score = distance_test(find_comp_peaks)
         print("position distance score - comps + peaks:", score)
 
-        classify_char_pos = util.load_dill(model_filename)[0]
+        proc = util.load_dill(model_filename)
+        classify_char_pos = proc[0]
         find_classify = lambda word_im: findletters.find_classify(
             word_im, half_width, extract_char, classify_char_pos)
         score = distance_test(find_classify)

@@ -15,6 +15,7 @@ import sklearn
 from sklearn.decomposition import PCA
 from sklearn.model_selection import KFold
 from sklearn.svm import SVC
+from sklearn.preprocessing import RobustScaler # StandardScaler
 
 from handwriting.func import grid_search, pipe
 
@@ -26,10 +27,12 @@ def build_feat_selection_pca(feats, n_components):
     pca.fit(feats)
     print("PCA components:", pca.n_components_, "/", pca.n_features_)
     print("PCA variance explained:", np.sum(pca.explained_variance_ratio_))
+    scaler = RobustScaler()
+    scaler.fit(pca.transform(feats))
 
     def select(feats_test):
         """do the feature selection"""
-        return pca.transform(feats_test)
+        return scaler.transform(pca.transform(feats_test))
 
     return select
 
@@ -78,10 +81,16 @@ def build_svc_fit(
     model if the support ratio exceeds support_ratio_max."""
 
     def svc_fit(feats_train, labels_train):
-
         """Perform the fitting."""
 
-        print(np.round(c, 3), np.round(gamma, 3), ": ", end="", flush=True)
+        # verify feature min, max, and standard deviation
+        # feats_mat = np.vstack(feats_train)
+        # print("min:", np.min(feats_mat, axis=0))
+        # print("max:", np.max(feats_mat, axis=0))
+        # print("mean:", np.mean(feats_mat, axis=0))
+        # print("std: ", np.std(feats_mat, axis=0))
+
+        print(np.round(c, 4), np.round(gamma, 4), ": ", end="", flush=True)
 
         svc = SVC(C=c, gamma=gamma, probability=True)
         svc.fit(feats_train, labels_train)
@@ -92,6 +101,23 @@ def build_svc_fit(
             return None
 
         print(np.round(support_ratio, 4), end=" ")
+
+        return svc
+
+    return svc_fit
+
+
+def build_linear_svc_fit(c):
+
+    """Build a function that fits a linear SVC."""
+
+    def svc_fit(feats_train, labels_train):
+        """Perform the fitting."""
+
+        print(np.round(c, 4), ": ", end="", flush=True)
+
+        svc = sklearn.svm.LinearSVC(C=c)
+        svc.fit(feats_train, labels_train)
 
         return svc
 
@@ -109,6 +135,7 @@ def score_accuracy(model, feats_test, labels_test):
         return score
     else:
         return None
+
 
 # TODO: score AUC function
 
@@ -139,18 +166,11 @@ def train_classifier(
     print("best hyperparameters:", best_params)
     model = fit_model(**best_params)(feats, labels)
 
-    # print("support vector counts:", list(zip(model.classes_, model.n_support_)))
-
     def predict(feats_test):
         """helper"""
         return model.predict(feats_test)
 
-    # TODO: write a general score function in the future
-    def score(feats_test, labels_test):
-        """helper"""
-        return score_func(model, feats_test, labels_test)
-
-    return predict, score
+    return predict, model
 
 
 def build_classification_process(feat_extractor, feat_selector, classifier):
@@ -188,7 +208,7 @@ def pad_image(char_bmp, width, height):
         y_max_new = char_bmp.shape[0] + yoff
     else:
         y_min_old = yoff
-        y_max_old = width + yoff
+        y_max_old = height + yoff
         y_min_new = 0
         y_max_new = height
 
@@ -235,6 +255,8 @@ def _filter_cc(image):
 def _align(image):
     """shift an image so the center of mass of the pixels is centered"""
 
+    # TODO: this should just operate on grayscale
+
     gray = 255 - np.array(np.sum(image, axis=2) / 3.0, dtype=np.uint8)
 
     x_size = image.shape[1]
@@ -243,7 +265,8 @@ def _align(image):
     y_mean = np.sum(np.sum(gray, axis=1) * np.arange(y_size)) / np.sum(gray)
 
     tmat = np.float32([[1, 0, x_size / 2.0 - x_mean], [0, 1, y_size / 2.0 - y_mean]])
-    new_image = cv2.warpAffine(image, tmat, image.shape[0:2], borderValue=(255, 255, 255))
+    new_image = cv2.warpAffine(
+        image, tmat, (image.shape[1], image.shape[0]), borderValue=(255, 255, 255))
 
     # cv2.imshow("image", image)
     # cv2.imshow("new_image", new_image)
@@ -254,7 +277,7 @@ def _align(image):
 
 def grayscale(image):
     """convert RGB ubyte image to grayscale"""
-    return np.sum(image, axis=2) / (255.0 * 3.0)
+    return np.sum(image, axis=2) / 3.0
 
 
 def _downsample(image, scale_factor):
@@ -324,7 +347,8 @@ def group_by_label(samples, labels):
                for label in unique_labels]
 
     res_unsorted = list(zip(unique_labels, grouped))
-    order = np.argsort([len(x) for x in grouped])
+    # order = np.argsort([len(x) for x in grouped])
+    order = sorted(range(len(grouped)), key=lambda k: unique_labels[k])
     return [res_unsorted[idx] for idx in order]
 
 
@@ -353,12 +377,12 @@ def balance(samples, labels, balance_factor, adjust_func):
     return zip(*pairs)
 
 
-def transform_random(image):
+def transform_random(image, trans_size=2.0, rot_size=0.32):
     """apply a small random transformation to an image"""
 
     # TODO: make ranges of random numbers input parameters
-    trans = np.random.rand(2) * 2 - 1.0
-    rot = np.random.rand(4) * 0.32 - 0.16
+    trans = np.random.rand(2) * trans_size - 0.5 * trans_size
+    rot = np.random.rand(4) * rot_size - 0.5 * rot_size
 
     x_size = image.shape[1]
     y_size = image.shape[0]

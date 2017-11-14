@@ -55,8 +55,8 @@ def main(argv):
     model_filename = "models/classify_characters.pkl"
     min_label_examples = 1
     remove_labels = ["\"", "!", "/", "~"]
-    balance_factor = 100
-    support_ratio_max = 0.9
+    balance_factor = 16 # 100
+    support_ratio_max = 1.0
 
     sample_filenames = ["data/20170929_" + str(idx) + ".png.sample.pkl.1"
                         for idx in range(1, 6)]

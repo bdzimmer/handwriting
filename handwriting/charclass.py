@@ -16,9 +16,11 @@ import numpy as np
 from handwriting import charclassml, util
 
 
-def label_chars(chars):
+def label_chars(chars, width=16, height=8, border=True):
 
     """label and categorize character images with the mouse and keyboard"""
+
+    # TODO: get rid of default parameters
 
     # TODO: optionally show the word image (second element of data tuple)
     # assumes the first part of the data tuples are bitmaps already padded to
@@ -34,12 +36,13 @@ def label_chars(chars):
     idx = [0]
     type_mode = True
 
-    # assumes the
-
     patch_width = chars[0].data[0].shape[1]
     patch_height = chars[0].data[0].shape[0]
 
-    blank_patch = np.zeros((patch_width, patch_height, 3), dtype=np.uint8)
+    if len(chars[0].data[0]) == 3:
+        blank_patch = np.zeros((patch_height, patch_width, 3), dtype=np.uint8)
+    else:
+        blank_patch = np.zeros((patch_height, patch_width), dtype=np.uint8)
 
     def on_mouse(event, mouse_x, mouse_y, flags, params):
         """helper"""
@@ -54,9 +57,30 @@ def label_chars(chars):
     def draw():
         """helper"""
         print("total working characters:", len([x for x, y in chars_working if not y]))
-        bmps = [x.data[0] if not y else blank_patch
+        bmps = [np.copy(x.data[0]) if not y else blank_patch
                 for x, y in chars_working]
-        patch_im = util.patch_image(bmps, 16, 2)
+        bmps_color = []
+        for bmp in bmps:
+            bmp = np.expand_dims(bmp, 2).repeat(3, 2)
+            if border:
+                cv2.rectangle(
+                    bmp,
+                    (0, 0),
+                    (bmp.shape[1] - 1, bmp.shape[0] - 1),
+                    (255, 0, 0))
+                # debugging character positions
+                cv2.rectangle(
+                    bmp,
+                    (8, 0),
+                    (bmp.shape[1] - 9, bmp.shape[0] - 1),
+                    (0, 255, 0))
+                cv2.line(
+                    bmp,
+                    (bmp.shape[1] // 2, 0),
+                    (bmp.shape[1] // 2, bmp.shape[0] - 1),
+                    (0, 0, 255))
+            bmps_color.append(bmp)
+        patch_im = util.patch_image(bmps_color, width, height)
         cv2.imshow("characters", patch_im)
 
     cv2.namedWindow("characters", cv2.WINDOW_NORMAL)
@@ -67,13 +91,13 @@ def label_chars(chars):
         if len(chars_done) == 0 and len([x for x, y in chars_working if not y]) == 0:
             break
         key = cv2.waitKey(60000)
-        if key == 27:
+        if key == 27: # escape
             break
-        elif key == 9:
+        elif key == 9: # tab
             print("toggling type mode")
             type_mode = not type_mode
             continue
-        elif key == 13:
+        elif key == 13: # enter
             chars_done = chars_done + [x for x in chars_working if x[1]]
             chars_working = [x for x in chars_working if not x[1]]
             idx[0] = 0
@@ -86,12 +110,22 @@ def label_chars(chars):
             chars_working[idx[0]] = (chars_working[idx[0]][0], False)
             draw()
             continue
+        elif key == 2555904: # right arrow
+            for c_idx in range(width * height):
+                if c_idx < len(chars_working):
+                    chars_working[c_idx] = (chars_working[c_idx][0], True)
+            chars_done = chars_done + [x for x in chars_working if x[1]]
+            chars_working = [x for x in chars_working if not x[1]]
+            idx[0] = 0
+            draw()
+            continue
         elif key == 32: # space
             new_char[0] = "`"
             print("marking invalid")
         else:
             new_char[0] = chr(key & 0xFF)
             print("marking " + new_char[0])
+
 
         if type_mode:
             print(idx[0])
