@@ -61,7 +61,8 @@ def label_chars(chars, width=16, height=8, border=True):
                 for x, y in chars_working]
         bmps_color = []
         for bmp in bmps:
-            bmp = np.expand_dims(bmp, 2).repeat(3, 2)
+            if len(bmp.shape) == 2:
+                bmp = np.expand_dims(bmp, 2).repeat(3, 2)
             if border:
                 cv2.rectangle(
                     bmp,
