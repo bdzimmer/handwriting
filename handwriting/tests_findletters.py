@@ -36,3 +36,7 @@ class TestsFindLetters(unittest.TestCase):
         self.assertAlmostEqual(
             1.0,
             findletters.jaccard_index((0, 3), (0, 3)))
+
+        self.assertAlmostEqual(
+            0.0,
+            findletters.jaccard_index((115, 145), (0, 5)))

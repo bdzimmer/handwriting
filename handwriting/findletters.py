@@ -111,7 +111,9 @@ def position_distance(pos1, pos2):
 def jaccard_index(pos1, pos2):
     """calculate intersection over union for two positions"""
     # assumes that within each tuple, the values are in increasing order
-    intersection = min(abs(pos1[1] - pos2[0]), abs(pos2[1] - pos1[0]))
+    intersection = min(
+        max(pos1[1] - pos2[0], 0),
+        max(pos2[1] - pos1[0], 0))
     min_point = min(pos1[0], pos2[0])
     max_point = max(pos1[1], pos2[1])
     union = min(max_point - min_point, (pos2[1] - pos2[0]) + (pos1[1] - pos1[0]))
@@ -119,17 +121,18 @@ def jaccard_index(pos1, pos2):
     return res
 
 
-def position_list_distance(positions_true, positions_test):
+def position_list_distance(
+        positions_true, positions_test, dist_func):
     """calculate a distance score between two sets of character positions"""
 
     # for each true position, find the closest position in the test
-    # positions. final score is RMSE of these distances
+    # positions.
 
     distances = np.zeros(len(positions_true))
     closest_idxs = np.zeros(len(positions_true), dtype=np.int)
     for idx, pos_true in enumerate(positions_true):
         # find the closest distance in the other set
-        pos_true_to_positions_test = [position_distance(pos_true, x)
+        pos_true_to_positions_test = [dist_func(pos_true, x)
                                       for x in positions_test]
         closest_idx = np.argmin(pos_true_to_positions_test)
         closest_idxs[idx] = closest_idx
