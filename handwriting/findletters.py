@@ -104,8 +104,19 @@ def positions_to_gaps(positions):
 
 
 def position_distance(pos1, pos2):
-    """calcate a distance score between two positions"""
+    """calculate a distance score between two positions"""
     return np.square(pos2[0] - pos1[0]) + np.square(pos2[1] - pos1[1])
+
+
+def jaccard_index(pos1, pos2):
+    """calculate intersection over union for two positions"""
+    # assumes that within each tuple, the values are in increasing order
+    intersection = min(abs(pos1[1] - pos2[0]), abs(pos2[1] - pos1[0]))
+    min_point = min(pos1[0], pos2[0])
+    max_point = max(pos1[1], pos2[1])
+    union = min(max_point - min_point, (pos2[1] - pos2[0]) + (pos1[1] - pos1[0]))
+    res = intersection / union
+    return res
 
 
 def position_list_distance(positions_true, positions_test):
