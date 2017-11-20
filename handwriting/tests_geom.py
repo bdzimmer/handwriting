@@ -15,7 +15,7 @@ import numpy as np
 
 from handwriting import geom
 
-VISUALIZE = True
+VISUALIZE = False
 
 RANDOM_SCALE = 10.0
 

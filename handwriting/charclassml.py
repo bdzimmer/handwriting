@@ -40,12 +40,12 @@ def build_current_best_process(
         #     ml._max_pool_multi(grad_0, [2]),
         #     ml._max_pool_multi(grad_1, [2])))
 
-        # return np.ravel(ml._max_pool_multi(img_g, [2, 3]))
+        return np.ravel(ml._max_pool_multi(img_g, [2, 3]))
 
-        img_b = np.array(img_g * 255, dtype=np.uint8)
-        hog = cv2.HOGDescriptor(
-            (96, 96), (8, 8), (8, 8), (2, 2), 8)
-        return np.ravel(hog.compute(img_b))
+        # img_b = np.array(img_g * 255, dtype=np.uint8)
+        # hog = cv2.HOGDescriptor(
+        #     (96, 96), (8, 8), (8, 8), (2, 2), 8)
+        # return np.ravel(hog.compute(img_b))
 
     if VISUALIZE:
         # visualize training data
@@ -59,7 +59,7 @@ def build_current_best_process(
             chars_working, chars_done = charclass.label_chars(group_pred)
 
     feats_train = [feat_extractor(x) for x in data_train]
-    feat_selector = ml.build_feat_selection_pca(feats_train, 0.90)
+    feat_selector = ml.build_feat_selection_pca(feats_train, 0.95)
     feats_train = feat_selector(feats_train)
 
     classifier, classifier_score = ml.train_classifier(
@@ -70,8 +70,8 @@ def build_current_best_process(
         n_splits=4,
         feats=feats_train,
         labels=labels_train,
-        gamma=np.logspace(-3, 0, 5),
-        c=np.logspace(1, 2, 3))
+        gamma=np.logspace(-5, 1, 16),
+        c=np.logspace(-2, 2, 7))
 
     classify_char_image = ml.build_classification_process(
         feat_extractor, feat_selector, classifier)

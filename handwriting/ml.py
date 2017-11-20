@@ -27,12 +27,13 @@ def build_feat_selection_pca(feats, n_components):
     pca.fit(feats)
     print("PCA components:", pca.n_components_, "/", pca.n_features_)
     print("PCA variance explained:", np.sum(pca.explained_variance_ratio_))
-    scaler = RobustScaler()
-    scaler.fit(pca.transform(feats))
+    # scaler = RobustScaler()
+    # scaler.fit(pca.transform(feats))
 
     def select(feats_test):
         """do the feature selection"""
-        return scaler.transform(pca.transform(feats_test))
+        return pca.transform(feats_test)
+        # return scaler.transform(pca.transform(feats_test))
 
     return select
 
@@ -90,7 +91,7 @@ def build_svc_fit(
         # print("mean:", np.mean(feats_mat, axis=0))
         # print("std: ", np.std(feats_mat, axis=0))
 
-        print(np.round(c, 4), np.round(gamma, 4), ": ", end="", flush=True)
+        print(np.round(c, 4), np.round(gamma, 5), ": ", end="", flush=True)
 
         svc = SVC(C=c, gamma=gamma, probability=True)
         svc.fit(feats_train, labels_train)
@@ -137,7 +138,19 @@ def score_accuracy(model, feats_test, labels_test):
         return None
 
 
-# TODO: score AUC function
+def score_auc(model, feats_test, labels_test):
+
+    """sklearn model scoring using AUC"""
+
+    if model is not None:
+        distances_test = model.decision_function(feats_test)
+        fpr, tpr, _ = sklearn.metrics.roc_curve(
+            labels_test, distances_test)
+        roc_auc = sklearn.metrics.auc(fpr, tpr)
+        print(np.round(roc_auc, 4))
+        return roc_auc
+    else:
+        return None
 
 
 def train_classifier(
@@ -359,7 +372,8 @@ def balance(samples, labels, balance_factor, adjust_func):
     grouped = group_by_label(samples, labels)
 
     if balance_factor <= 1.0:
-        target_group_size = int(len(grouped[-1][1]) * balance_factor)
+        largest_group_size = max([len(x[1]) for x in grouped])
+        target_group_size = int(largest_group_size * balance_factor)
     else:
         target_group_size = int(balance_factor)
 
