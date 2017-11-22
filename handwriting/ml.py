@@ -351,6 +351,48 @@ def _max_pool_multi(image, ns):
     return np.hstack([np.ravel(y) for y in res])
 
 
+def column_ex(gray):
+
+    """experimental feature - something like the center of mass of
+    overlapping columns of the image"""
+
+    width = 2
+    # mul_mat = np.arange(y_size)[:, np.newaxis]
+    # for some reason, it works a lot better to not divide by the sum of the
+    # whole window but only the first column.
+    mul_mat = np.linspace(0, 1, gray.shape[0])[:, np.newaxis]
+
+    y_agg = np.array([(np.sum(gray[:, idx + width] * mul_mat) /
+                       np.sum(gray[:, idx]))
+                      for idx in range(gray.shape[1] - width)])
+    y_agg[~np.isfinite(y_agg)] = 0.0
+
+    res = np.hstack((y_agg, np.diff(y_agg)))
+
+    return res
+
+
+#def column_ex_im(gray):
+#
+#    """image version of column_ex"""
+#
+#    y_size = gray.shape[0] * 1.0
+#    y_agg = np.array([np.sum(gray[:, idx:(idx + 3)] * np.arange(y_size)[:, np.newaxis] / np.sum(gray[:, idx]))
+#                      for idx in range(gray.shape[1] - 3)])
+#    y_agg[np.isnan(y_agg)] = y_size
+#    # data = np.array(np.clip(y_agg, 0, y_size - 2), dtype=np.int)
+#    data = np.array(
+#        np.clip(np.diff(y_agg) + y_size / 2.0, 0, y_size - 2), dtype=np.int)
+#
+#    res_im = np.zeros(gray.shape)
+#    for idx in range(data.shape[0]):
+#        y_val = data[idx]
+#        res_im[y_val, idx] = 1.0
+#        res_im[y_val + 1, idx] = 1.0
+#
+#    return res_im
+
+
 def group_by_label(samples, labels):
     """group samples by label"""
 

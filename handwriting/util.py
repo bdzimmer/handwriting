@@ -15,8 +15,6 @@ from sklearn.neighbors import KernelDensity
 
 dill.settings["recurse"] = True
 
-VISUALIZE = False
-
 
 def load(input_filename):
     """unpickle an object from a file"""
@@ -73,7 +71,7 @@ def patch_image(bmps, width=16, height=16):
     return res
 
 
-def find_peak_idxs(data, data_range, bandwidth):
+def find_peak_idxs(data, data_range, bandwidth, visualize=False):
 
     """find locations of peaks in a KDE"""
 
@@ -92,7 +90,7 @@ def find_peak_idxs(data, data_range, bandwidth):
     if len(peak_idxs) == 0:
         peak_idxs = [np.argmax(density)]
 
-    if VISUALIZE:
+    if visualize:
         import matplotlib.pyplot as plt
         plt.figure()
         plt.plot(data_range, density, color="blue")

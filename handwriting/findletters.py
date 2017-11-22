@@ -8,28 +8,27 @@ Find positions of characters in images of words or a single word.
 
 # TODO: rename to "findcharacters.py"
 
+
+import cv2
+
 import numpy as np
 
 from handwriting import util
 
 
-def find_thresh_peaks(word_image):
+def find_thresh_peaks(word_image, peak_sigma=2.0, mean_divisor=1.0, peak_percentile=0):
 
     """find letter positions using thresholds and peaks in a KDE"""
 
-    peak_sigma = 2 # 2
-    mean_divisor = 1.0 # 1.0
-    peak_percentile = 0 # 0
-
-    # data = np.min(np.array(line_image[32:, :, 0], dtype=np.float), axis=0)
     data = np.std(np.array(word_image[32:, :, 0], dtype=np.float), axis=0)
+
     data_range = np.arange(0, word_image.shape[1])
     li_thresh = np.mean(data) / mean_divisor
 
     idxs = np.where(data < li_thresh)[0]
 
     if len(idxs) == 0:
-        return []
+        return [(0, word_image.shape[1] - 1)]
 
     # smaller bandwidths get letters or pairs of letters!
     peak_idxs, peak_values = util.find_peak_idxs(
@@ -72,6 +71,36 @@ def find_classify(word_im, half_width, extract_char, classify_char_pos):
     return gaps_to_positions([0] + char_poss + [word_im.shape[1] - 1])
 
 
+def find_classify_prob(
+        word_im, half_width, extract_char, classify_char_pos, thresh):
+    """find character positions using a classifier that returns a probability"""
+
+    char_poss = []
+    run = []
+    for x in range(2, word_im.shape[1] - 2, 1): # step 2
+        test_range = (x - half_width, x + half_width)
+        test_im = extract_char(test_range, word_im)
+        # disp_im = np.copy(word_im)
+        # for idx in run:
+        #     disp_im[:, idx[0], 0] = 255
+        # disp_im[:, x] = (0, 0, 255)
+        # cv2.imshow("test", disp_im)
+        # cv2.waitKey()
+        # print("testing", test_range, test_im.shape)
+        prob = classify_char_pos([test_im])[0]
+        if prob > thresh:
+            run.append((x, prob))
+        else:
+            if len(run) > 1:
+                char_poss.append(run[np.argmax([y[1] for y in run])][0])
+                run = []
+    if len(run) > 1:
+        char_poss.append(run[np.argmax([y[1] for y in run])][0])
+        run = []
+
+    return gaps_to_positions([0] + char_poss + [word_im.shape[1] - 1])
+
+
 def find_combine(word_im, extract_char, func1, func2):
     """find positions using one function, then find more positions inside
     those with another function."""
@@ -83,8 +112,11 @@ def find_combine(word_im, extract_char, func1, func2):
     # init_poss =  findwords.find_conc_comp(word_im, merge=False)
     #  findletters.find_thresh_peaks(
     init_poss = func1(word_im)
-    return [add(x, y) for x in init_poss
+    res = [add(x, y) for x in init_poss
             for y in func2(extract_char(x, word_im))]
+    res_pos = positions_to_gaps(res) if len(res) > 0 else []
+    return gaps_to_positions(
+        [0] + res_pos + [word_im.shape[1] - 1])
 
 
 def gaps_to_positions(gaps):
@@ -138,7 +170,5 @@ def position_list_distance(
         closest_idxs[idx] = closest_idx
         distances[idx] = pos_true_to_positions_test[closest_idx]
 
-    print(".", end="")
-
     # return np.sqrt(np.mean(np.square(scores)))
-    return distances
+    return distances, closest_idxs
