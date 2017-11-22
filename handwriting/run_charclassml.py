@@ -54,14 +54,18 @@ def main(argv):
 
     model_filename = "models/classify_characters.pkl"
     min_label_examples = 1
-    remove_labels = ["\"", "!", "/", "~"]
-    balance_factor = 16 # 100
+    # remove_labels = ["\"", "!", "/", "~"]
+    remove_labels = ["~", "_", ":", "*"]
+    balance_factor = 64 # 100
     support_ratio_max = 1.0
 
-    sample_filenames = ["data/20170929_" + str(idx) + ".png.sample.pkl.1"
-                        for idx in range(1, 6)]
-    train_filenames = sample_filenames[0:4]
-    test_filenames = sample_filenames[4:5]
+    sample_filenames = (
+        ["data/20170929_" + str(idx) + ".png.sample.pkl.1"
+         for idx in range(1, 6)] +
+        ["data/20171120_" + str(idx) + ".png.sample.pkl.1"
+         for idx in range(1, 5)])
+    train_filenames = sample_filenames[0:8]
+    test_filenames = sample_filenames[8:9]
 
     print("loading and balancing datasets...")
 

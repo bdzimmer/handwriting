@@ -30,7 +30,8 @@ def current_best_process():
         lpos, im, px_above, px_below)
 
     # find_word_poss = findwords.find_thresh
-    find_word_poss = lambda x: findwords.find_conc_comp(x, merge=True, merge_tol=8)
+    find_word_poss = lambda x: findwords.find_conc_comp(
+        x[16:-16, :], merge=True, merge_tol=12)
     extract_word = lambda wpos, im: im[:, wpos[0]:wpos[1]]
 
     # find_char_poss = findletters.find_thresh_peaks # oversegments
@@ -41,12 +42,27 @@ def current_best_process():
     print("loading models...", end="")
 
     half_width = 8
-    classify_char_pos = util.load_dill("models/classify_charpos.pkl")[0]
-    find_char_poss = lambda x: findletters.find_classify(
-        x, half_width, extract_char, classify_char_pos)
 
-    classify_characters = util.load_dill("models/classify_characters.pkl")[0]
-    classify_char = lambda x: classify_characters([x])[0]
+    classify_charpos = util.load_dill("models/classify_charpos.pkl")
+
+    def classify_charpos_prob(im):
+        feat_extractor = classify_charpos[2]
+        feat_selector = classify_charpos[3]
+        model = classify_charpos[5]
+        res = model.decision_function(
+            feat_selector([feat_extractor(y) for y in im]))
+        return res
+
+    find_char_poss = lambda x: findletters.find_classify_prob(
+            x, half_width, extract_char, classify_charpos_prob, 0.2)
+
+    classify_characters = util.load_dill("models/classify_characters.pkl")
+    classify_char = lambda x: classify_characters[0]([x])[0]
+
+    # find_char_poss_comps = lambda word_im: findletters.find_combine(
+    #     word_im, extract_char,
+    #     lambda x: findwords.find_conc_comp(x[16:-16, :], merge=True),
+    #     find_classify_prob)
 
     print("done")
 

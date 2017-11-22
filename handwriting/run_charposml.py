@@ -16,11 +16,11 @@ import cv2
 import numpy as np
 import sklearn
 
-from handwriting import util, charclass, ml
+from handwriting import util, charclass, ml, func
 from handwriting import findletters, findwords
 from handwriting.prediction import Sample
 
-VISUALIZE = True
+VISUALIZE = False
 
 
 def build_classification_process(data_train, labels_train):
@@ -33,7 +33,7 @@ def build_classification_process(data_train, labels_train):
 
     def prep_image(image):
         """prepare an image (result is still a 2d image)"""
-        start_row = 16 # 32
+        start_row = 32
         image = image[start_row:, :]
         # return 255.0 - ml.grayscale(ml._align(pad_image(image)))
         return 255.0 - ml.grayscale(pad_image(image))
@@ -48,13 +48,19 @@ def build_classification_process(data_train, labels_train):
         # 2017-11-13: 3rd best
         # return ml._max_pool_multi(img_g, [1, 2])
         # return ml._downsample_4(img_g)
-        # return ml._downsample_multi(img_g, [0.125])# [0.5, 0.25, 0.125])
+        # return ml._downsample_multi(img_g, [1.0, 0.5])
+
+        # return np.ravel(ml.column_agg(img_g))
+        return np.hstack(
+            (ml.column_ex(img_g),
+             ml.column_ex(ml._max_pool(img_g))))
 
         # 2017-11-13: 2nd best
-        grad_0, grad_1 = np.gradient(img_g)
-        return np.hstack((
-            ml._max_pool_multi(grad_0, [2]),
-            ml._max_pool_multi(grad_1, [2])))
+        # grad_0, grad_1 = np.gradient(img_g)
+        # return np.hstack((
+        #     ml._max_pool_multi(grad_0, [2]),
+        #     ml._max_pool_multi(grad_1, [2])))
+        #     # ml._max_pool_multi(ml.column_agg(img_g)))
 
         # 2017-11-13: best!
         # img_b = np.array(img_g * 255, dtype=np.uint8)
@@ -72,11 +78,11 @@ def build_classification_process(data_train, labels_train):
             chars_working, chars_done = charclass.label_chars(group_pred)
 
     feats_train = [feat_extractor(x) for x in data_train]
-    feat_selector = ml.build_feat_selection_pca(feats_train, 0.95) # 0.90
+    # feat_selector = ml.build_feat_selection_pca(feats_train, 0.99) # 0.90
     # feat_selector = lambda x: x
-    # scaler = sklearn.preprocessing.RobustScaler()
-    # scaler.fit(feats_train)
-    # feat_selector = scaler.transform
+    scaler = sklearn.preprocessing.RobustScaler()
+    scaler.fit(feats_train)
+    feat_selector = scaler.transform
 
     feats_train = feat_selector(feats_train)
     print("feature length:", len(feats_train[0]))
@@ -210,13 +216,19 @@ def main(argv):
     random.seed(0)
 
     model_filename = "models/classify_charpos.pkl"
-    half_width = 8 # 8
-    balance_factor = 64 # 64 # 20 # 15 # 500
+    half_width = 8
+    balance_factor = 32 # 64 # 20 # 15 # 500
 
-    sample_filenames = ["data/20170929_" + str(idx) + ".png.sample.pkl.1"
-                        for idx in range(1, 6)]
-    train_filenames = sample_filenames[1:5]
-    test_filenames = sample_filenames[0:1]
+    sample_filenames = (
+        ["data/20170929_" + str(idx) + ".png.sample.pkl.1"
+         for idx in range(1, 6)] +
+        ["data/20171120_" + str(idx) + ".png.sample.pkl.1"
+         for idx in range(1, 5)])
+    train_filenames = sample_filenames[0:8]
+    test_filenames = sample_filenames[8:9]
+
+    print("training files:", train_filenames)
+    print("test files:", test_filenames)
 
     print("loading and balancing datasets...")
 
@@ -234,12 +246,9 @@ def main(argv):
     data_train, labels_train = ml.balance(
         data_train_unbalanced, labels_train_unbalanced,
         balance_factor,
-        # ml.transform_random
         partial(
             ml.transform_random,
-            trans_size=0.0, rot_size=0.2)
-        # lambda x: x
-        )
+            trans_size=2.0, rot_size=0.2))
 
     # load test set
     data_test, labels_test = _load_samples(test_filenames, half_width)
@@ -267,6 +276,12 @@ def main(argv):
 
     labels_train = [x[0] for x in labels_train]
     labels_test = [x[0] for x in labels_test]
+
+    # rebalance between true and false
+    # data_train, labels_train = ml.balance(
+    #     data_train, labels_train,
+    #     2000,
+    #     lambda x: x)
 
     print(
         "training group sizes:",
@@ -354,44 +369,95 @@ def main(argv):
         word_ims_test = _load_words(test_filenames)
         print("done")
 
-        def distance_test(find_char_poss_func):
+        def distance_test(find_char_poss_func, visualize=False):
             """helper"""
+            jaccard_distance = lambda x, y: 1.0 - findletters.jaccard_index(x, y)
             distances = []
             for word_im in word_ims_test:
-                positions = findletters.position_list_distance(
-                    [x.data for x in word_im.result],
-                    find_char_poss_func(word_im.data),
-                    lambda x, y: 1.0 - findletters.jaccard_index(x, y))
-                distances.append(positions)
-                print(".", end="", flush=True)
+                positions_true = [x.data for x in word_im.result]
+                positions_test = find_char_poss_func(word_im.data)
+                cur_distances, idxs = findletters.position_list_distance(
+                    positions_true, positions_test,
+                    jaccard_distance)
+
+                if visualize:
+                    for idx_true, idx_test in enumerate(idxs):
+                        pos_true = positions_true[idx_true]
+                        pos_test = positions_test[idx_test]
+                        disp_im = 255 - np.copy(word_im.data)
+
+                        disp_im[:, pos_true[0]:pos_true[1], 0] = 255
+                        disp_im[:, pos_true[0]] = (255, 0, 0)
+                        disp_im[:, pos_true[1]] = (255, 0, 0)
+
+                        disp_im[:, pos_test[0]:pos_test[1], 2] = 255
+                        disp_im[:, pos_test[0]] = (0, 0, 255)
+                        disp_im[:, pos_test[1]] = (0, 0, 255)
+
+                        cv2.namedWindow("positions", cv2.WINDOW_NORMAL)
+                        cv2.imshow("positions", disp_im)
+                        print(
+                            pos_true, pos_test,
+                            cur_distances[idx_true],
+                            1.0 - cur_distances[idx_true])
+                        cv2.waitKey()
+
+                distances.append(cur_distances)
+
             # TODO: should I be aggregating this differently?
-
             # mean overlap - higher is better
-            return np.mean([1.0 - y for x in distances for y in x])
+            res = np.mean([1.0 - y for x in distances for y in x])
+            print(res)
+            return res
 
-        score = distance_test(findletters.find_thresh_peaks)
-        print("position distance score - peaks:", score)
+        def build_find_thresh_peaks(peak_sigma, mean_divisor):
+            print(peak_sigma, mean_divisor, ": ", end="", flush=True)
+            return partial(
+                findletters.find_thresh_peaks,
+                peak_sigma=peak_sigma,
+                mean_divisor=mean_divisor)
+
+        func.grid_search(
+            func.pipe(
+                build_find_thresh_peaks,
+                distance_test),
+            peak_sigma = [1.0, 1.5, 2.0, 2.5],
+            mean_divisor = [0.7, 1.0, 1.3, 1.4, 1.6])
+
+        proc = util.load_dill(model_filename)
+        (classify_char_pos,
+         prep_image, feat_extractor, feat_selector,
+         classifier, model) = proc
+
+        def classify_ml(im):
+            res = model.decision_function(
+                feat_selector([feat_extractor(y) for y in im]))
+            # res_bool = classify_char_pos(im)
+            return res
+
+        # classify_char_pos = proc[0]
+
+        find_classify = lambda word_im: findletters.find_classify_prob(
+                word_im, half_width, extract_char, classify_ml, 0.2)
+        find_comp_classify = lambda word_im: findletters.find_combine(
+            word_im, extract_char,
+            lambda x: findwords.find_conc_comp(x[16:-16, :], merge=True),
+            find_classify)
+        score = distance_test(find_comp_classify, False)
+        print("position distance score - comps + ML:", score)
+
+        for thresh in [0.0, 0.2, 0.4, 0.6, 0.8]:
+            find_classify = lambda word_im: findletters.find_classify_prob(
+                word_im, half_width, extract_char, classify_ml, thresh)
+            score = distance_test(find_classify, False)
+            print("position distance score - ML", thresh, ":", score)
 
         find_comp_peaks = lambda word_im: findletters.find_combine(
             word_im, extract_char,
-            lambda x: findwords.find_conc_comp(x, merge=False),
+            lambda x: findwords.find_conc_comp(x[16:-16, :], merge=True),
             findletters.find_thresh_peaks)
         score = distance_test(find_comp_peaks)
         print("position distance score - comps + peaks:", score)
-
-        proc = util.load_dill(model_filename)
-        classify_char_pos = proc[0]
-        find_classify = lambda word_im: findletters.find_classify(
-            word_im, half_width, extract_char, classify_char_pos)
-        score = distance_test(find_classify)
-        print("position distance score - ML:", score)
-
-        find_comp_peaks = lambda word_im: findletters.find_combine(
-            word_im, extract_char,
-            lambda x: findwords.find_conc_comp(x, merge=False),
-            find_classify)
-        score = distance_test(find_comp_peaks)
-        print("position distance score - comps + ML:", score)
 
 
 if __name__ == "__main__":
