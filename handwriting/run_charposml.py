@@ -80,9 +80,7 @@ def build_classification_process(data_train, labels_train):
     feats_train = [feat_extractor(x) for x in data_train]
     # feat_selector = ml.build_feat_selection_pca(feats_train, 0.99) # 0.90
     # feat_selector = lambda x: x
-    scaler = sklearn.preprocessing.RobustScaler()
-    scaler.fit(feats_train)
-    feat_selector = scaler.transform
+    feat_selector = ml.build_scaler(feats_train, robust=True)
 
     feats_train = feat_selector(feats_train)
     print("feature length:", len(feats_train[0]))

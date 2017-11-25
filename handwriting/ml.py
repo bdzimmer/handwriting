@@ -15,7 +15,6 @@ import sklearn
 from sklearn.decomposition import PCA
 from sklearn.model_selection import KFold
 from sklearn.svm import SVC
-from sklearn.preprocessing import RobustScaler # StandardScaler
 
 from handwriting.func import grid_search, pipe
 
@@ -27,18 +26,32 @@ def build_feat_selection_pca(feats, n_components):
     pca.fit(feats)
     print("PCA components:", pca.n_components_, "/", pca.n_features_)
     print("PCA variance explained:", np.sum(pca.explained_variance_ratio_))
-    # scaler = RobustScaler()
-    # scaler.fit(pca.transform(feats))
 
     def select(feats_test):
         """do the feature selection"""
         return pca.transform(feats_test)
-        # return scaler.transform(pca.transform(feats_test))
 
     return select
 
 
-def cross_validation(n_splits):
+def build_scaler(feats, robust=True):
+    """build a feature scaler"""
+
+    if robust:
+        scaler = sklearn.preprocessing.RobustScaler()
+    else:
+        scaler = sklearn.preprocessing.StandardScaler()
+
+    scaler.fit(feats)
+
+    def scale(feats_test):
+        """peform scaling"""
+        return scaler.transform(feats_test)
+
+    return scale
+
+
+def build_cross_validation(n_splits):
 
     """Build a function to perform k-fold cross validation to fit
     a model."""
@@ -159,7 +172,7 @@ def train_classifier(
     """train a classifier"""
 
     cross_validate = partial(
-        cross_validation(n_splits),
+        build_cross_validation(n_splits),
         score_func=score_func,
         feats=feats,
         labels=labels)

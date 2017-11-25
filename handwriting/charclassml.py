@@ -73,10 +73,6 @@ def build_current_best_process(
     feats_train = [feat_extractor(x) for x in data_train]
     print("--building feature selector")
     feat_selector = ml.build_feat_selection_pca(feats_train, 0.95) # 0.95
-    # import sklearn
-    # scaler = sklearn.preprocessing.RobustScaler()
-    # scaler.fit(feats_train)
-    # feat_selector = scaler.transform
     print("--selecting features from training data")
     feats_train = feat_selector(feats_train)
 
