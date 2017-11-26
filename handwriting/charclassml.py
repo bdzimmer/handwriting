@@ -72,24 +72,34 @@ def build_current_best_process(
     print("--extracting features from training data")
     feats_train = [feat_extractor(x) for x in data_train]
     print("--building feature selector")
-    feat_selector = ml.build_feat_selection_pca(feats_train, 0.95) # 0.95
+    feat_selector = ml.build_feat_selection_pca(feats_train, 0.99) # 0.95
     print("--selecting features from training data")
     feats_train = feat_selector(feats_train)
 
     print("--training classifier")
 
+    # classifier, classifier_score = ml.train_classifier(
+    #     # fit_model=partial(
+    #     #     ml.build_svc_fit,
+    #     #     support_ratio_max=support_ratio_max),
+    #     fit_model=ml.build_linear_svc_fit,
+    #     score_func=ml.score_accuracy,
+    #     n_splits=5,
+    #     feats=feats_train,
+    #     labels=labels_train,
+    #     c=np.logspace(-2, 0, 10),
+    #     # gamma=np.logspace(-5, 1, 8),
+    #     # c=np.logspace(-2, 2, 7)
+    # )
+
     classifier, classifier_score = ml.train_classifier(
-        # fit_model=partial(
-        #     ml.build_svc_fit,
-        #     support_ratio_max=support_ratio_max),
-        fit_model=ml.build_linear_svc_fit,
+        fit_model=ml.build_nn_classifier,
         score_func=ml.score_accuracy,
         n_splits=5,
         feats=feats_train,
         labels=labels_train,
-        c=np.logspace(-2, 0, 10),
-        # gamma=np.logspace(-5, 1, 8),
-        # c=np.logspace(-2, 2, 7)
+        hidden_layer_sizes=[(256, 128), (256, 64), (256, 32)],
+        alpha=[0.0001]
     )
 
     classify_char_image = ml.build_classification_process(

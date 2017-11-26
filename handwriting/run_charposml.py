@@ -48,19 +48,19 @@ def build_classification_process(data_train, labels_train):
         # 2017-11-13: 3rd best
         # return ml._max_pool_multi(img_g, [1, 2])
         # return ml._downsample_4(img_g)
-        # return ml._downsample_multi(img_g, [1.0, 0.5])
+        return ml._downsample_multi(img_g, [1.0, 0.5])
+        # return ml._downsample_multi(img_g, [0.5, 0.25])
 
         # return np.ravel(ml.column_agg(img_g))
-        return np.hstack(
-            (ml.column_ex(img_g),
-             ml.column_ex(ml._max_pool(img_g))))
+        # return np.hstack(
+        #     (ml.column_ex(img_g),
+        #      ml.column_ex(ml._max_pool(img_g))))
 
         # 2017-11-13: 2nd best
         # grad_0, grad_1 = np.gradient(img_g)
         # return np.hstack((
         #     ml._max_pool_multi(grad_0, [2]),
         #     ml._max_pool_multi(grad_1, [2])))
-        #     # ml._max_pool_multi(ml.column_agg(img_g)))
 
         # 2017-11-13: best!
         # img_b = np.array(img_g * 255, dtype=np.uint8)
@@ -78,25 +78,35 @@ def build_classification_process(data_train, labels_train):
             chars_working, chars_done = charclass.label_chars(group_pred)
 
     feats_train = [feat_extractor(x) for x in data_train]
-    # feat_selector = ml.build_feat_selection_pca(feats_train, 0.99) # 0.90
+    feat_selector = ml.build_feat_selection_pca(feats_train, 0.99) # 0.90
     # feat_selector = lambda x: x
-    feat_selector = ml.build_scaler(feats_train, robust=True)
+    # feat_selector = ml.build_scaler(feats_train, robust=True)
 
     feats_train = feat_selector(feats_train)
     print("feature length:", len(feats_train[0]))
 
+    # classifier, classifier_score = ml.train_classifier(
+    #     # fit_model=partial(
+    #     #     ml.build_svc_fit,
+    #     #     support_ratio_max=1.0),
+    #     fit_model=ml.build_linear_svc_fit,
+    #     # score_func=ml.score_accuracy,
+    #     score_func=ml.score_auc,
+    #     n_splits=5,
+    #     feats=feats_train,
+    #     labels=labels_train,
+    #     c=np.logspace(-4, 0, 30),
+    #     # gamma=np.logspace(-2, 0, 20)
+    # )
+
     classifier, classifier_score = ml.train_classifier(
-        # fit_model=partial(
-        #     ml.build_svc_fit,
-        #     support_ratio_max=1.0),
-        fit_model=ml.build_linear_svc_fit,
-        # score_func=ml.score_accuracy,
-        score_func=ml.score_auc,
+        fit_model=ml.build_nn_classifier,
+        score_func=partial(ml.score_auc, decision_function=False),
         n_splits=5,
         feats=feats_train,
         labels=labels_train,
-        c=np.logspace(-4, 0, 30),
-        # gamma=np.logspace(-2, 0, 20)
+        hidden_layer_sizes=[(256, 128), (256, 64), (256, 32)],
+        alpha=[0.0001]
     )
 
     classify_char_image = ml.build_classification_process(
@@ -314,7 +324,8 @@ def main(argv):
         print(sklearn.metrics.confusion_matrix(
             labels_test, labels_test_pred, [True, False]))
 
-        distances_test = model.decision_function(feats_test)
+        # distances_test = model.decision_function(feats_test)
+        distances_test = model.predict_proba(feats_test)[:, 1]
         fpr, tpr, _ = sklearn.metrics.roc_curve(
             labels_test, distances_test)
         roc_auc = sklearn.metrics.auc(fpr, tpr)

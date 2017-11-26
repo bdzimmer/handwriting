@@ -49,12 +49,12 @@ def current_best_process():
         feat_extractor = classify_charpos[2]
         feat_selector = classify_charpos[3]
         model = classify_charpos[5]
-        res = model.decision_function(
-            feat_selector([feat_extractor(y) for y in im]))
+        res = model.predict_proba(
+            feat_selector([feat_extractor(y) for y in im]))[:, 1]
         return res
 
     find_char_poss = lambda x: findletters.find_classify_prob(
-            x, half_width, extract_char, classify_charpos_prob, 0.2)
+            x, half_width, extract_char, classify_charpos_prob, 0.95) # 0.2
 
     classify_characters = util.load_dill("models/classify_characters.pkl")
     classify_char = lambda x: classify_characters[0]([x])[0]

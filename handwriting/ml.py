@@ -15,6 +15,7 @@ import sklearn
 from sklearn.decomposition import PCA
 from sklearn.model_selection import KFold
 from sklearn.svm import SVC
+from sklearn import neural_network
 
 from handwriting.func import grid_search, pipe
 
@@ -94,7 +95,7 @@ def build_svc_fit(
     """Build a function that fits an RBF SVC, returning None instead of the
     model if the support ratio exceeds support_ratio_max."""
 
-    def svc_fit(feats_train, labels_train):
+    def fit(feats_train, labels_train):
         """Perform the fitting."""
 
         # verify feature min, max, and standard deviation
@@ -118,14 +119,14 @@ def build_svc_fit(
 
         return svc
 
-    return svc_fit
+    return fit
 
 
 def build_linear_svc_fit(c):
 
     """Build a function that fits a linear SVC."""
 
-    def svc_fit(feats_train, labels_train):
+    def fit(feats_train, labels_train):
         """Perform the fitting."""
 
         print(np.round(c, 4), ": ", end="", flush=True)
@@ -135,7 +136,31 @@ def build_linear_svc_fit(c):
 
         return svc
 
-    return svc_fit
+    return fit
+
+
+def build_nn_classifier(hidden_layer_sizes, alpha):
+
+    """Build a function that fits a neural network classifier."""
+
+    def fit(feats_train, labels_train):
+        """Perform the fitting."""
+
+        # default model uses relu activation function, adam optimizer.
+        # only loss function available is cross-entropy
+
+        # probably will want to experiment with learning rate eventually
+
+        print(
+            hidden_layer_sizes, np.round(alpha, 4), ": ", end="", flush=True)
+
+        model = neural_network.MLPClassifier(
+            hidden_layer_sizes=hidden_layer_sizes, alpha=alpha)
+        model.fit(feats_train, labels_train)
+
+        return model
+
+    return fit
 
 
 def score_accuracy(model, feats_test, labels_test):
@@ -151,12 +176,18 @@ def score_accuracy(model, feats_test, labels_test):
         return None
 
 
-def score_auc(model, feats_test, labels_test):
+def score_auc(model, feats_test, labels_test, decision_function=True):
 
     """sklearn model scoring using AUC"""
 
     if model is not None:
-        distances_test = model.decision_function(feats_test)
+        if decision_function:
+            distances_test = model.decision_function(feats_test)
+        else:
+            # only correct for binary classifier
+            predictions = model.predict_proba(feats_test)
+            distances_test = predictions[:, 1]
+
         fpr, tpr, _ = sklearn.metrics.roc_curve(
             labels_test, distances_test)
         roc_auc = sklearn.metrics.auc(fpr, tpr)
