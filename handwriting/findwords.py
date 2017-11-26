@@ -112,6 +112,9 @@ def find_conc_comp(line_image, merge=True, merge_tol=8):
     final_positions = [x for x in final_positions if x[1] - x[0] > 1 and x[0] >= 0 and x[1] >= 0]
     final_positions = sorted(final_positions, key=lambda x: x[0])
 
+    if not final_positions:
+        final_positions = [(0, line_image.shape[0] - 1)]
+
     if VISUALIZE:
         cv2.namedWindow("thresh", cv2.WINDOW_NORMAL)
         cv2.imshow("thresh", thresh)

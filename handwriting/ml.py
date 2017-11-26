@@ -340,11 +340,10 @@ def grayscale(image):
 def downsample(image, scale_factor):
     """downsample an image and unravel to create a feature vector"""
 
-    feats = np.ravel(
-        cv2.resize(
-            image,
-            (int(image.shape[0] * scale_factor),
-             int(image.shape[1] * scale_factor))))
+    feats = cv2.resize(
+        image,
+        (int(image.shape[0] * scale_factor),
+         int(image.shape[1] * scale_factor)))
     return feats
 
 
@@ -357,7 +356,7 @@ def downsample_4(image):
 def downsample_multi(image, scales):
     """create a feature vector from arbitrary downsampling amounts"""
 
-    return np.hstack([downsample(image, x) for x in scales])
+    return np.hstack([np.ravel(downsample(image, x)) for x in scales])
 
 
 def max_pool(im):

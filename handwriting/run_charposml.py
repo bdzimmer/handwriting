@@ -18,6 +18,7 @@ import sklearn
 
 from handwriting import util, charclass, ml, func
 from handwriting import findletters, findwords
+from handwriting import data
 from handwriting.prediction import Sample
 
 VISUALIZE = False
@@ -48,7 +49,7 @@ def build_classification_process(data_train, labels_train):
         # 2017-11-13: 3rd best
         # return ml.max_pool_multi(img_g, [1, 2])
         # return ml.downsample_4(img_g)
-        return ml.downsample_multi(img_g, [1.0, 0.5])
+        # return ml.downsample_multi(img_g, [1.0, 0.5])
         # return ml.downsample_multi(img_g, [0.5, 0.25])
 
         # return np.ravel(ml.column_agg(img_g))
@@ -57,10 +58,13 @@ def build_classification_process(data_train, labels_train):
         #      ml.column_ex(ml.max_pool(img_g))))
 
         # 2017-11-13: 2nd best
-        # grad_0, grad_1 = np.gradient(img_g)
-        # return np.hstack((
-        #     ml.max_pool_multi(grad_0, [2]),
-        #     ml.max_pool_multi(grad_1, [2])))
+        grad_0, grad_1 = np.gradient(img_g)
+        return np.hstack((
+            ml.max_pool_multi(grad_0, [2]),
+            ml.max_pool_multi(grad_1, [2])))
+
+        # grad_0, grad_1 = np.gradient(ml.downsample(img_g, 0.5))
+        # return np.hstack((np.ravel(grad_0), np.ravel(grad_1)))
 
         # 2017-11-13: best!
         # img_b = np.array(img_g * 255, dtype=np.uint8)
@@ -211,7 +215,6 @@ def _load_samples(filenames, half_width):
     return data, combined_labels
 
 
-
 def main(argv):
     """main program"""
 
@@ -227,13 +230,7 @@ def main(argv):
     half_width = 8
     balance_factor = 32 # 64 # 20 # 15 # 500
 
-    sample_filenames = (
-        ["data/20170929_" + str(idx) + ".png.sample.pkl.1"
-         for idx in range(1, 6)] +
-        ["data/20171120_" + str(idx) + ".png.sample.pkl.1"
-         for idx in range(1, 5)])
-    train_filenames = sample_filenames[0:8]
-    test_filenames = sample_filenames[8:9]
+    train_filenames, test_filenames = data.train_test_pages([5, 6])
 
     print("training files:", train_filenames)
     print("test files:", test_filenames)
@@ -468,7 +465,7 @@ def main(argv):
             find_comp,
             find_classify)
         score = distance_test(find_comp_classify, False)
-        print("connected compoents + ML (", thresh, ") :", score)
+        print("connected components + ML (", thresh, ") :", score)
 
         for thresh in [0.0, 0.2, 0.4, 0.6, 0.7, 0.8, 0.9, 1.0]:
             find_classify = lambda word_im: findletters.find_classify_prob(

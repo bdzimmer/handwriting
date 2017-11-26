@@ -36,6 +36,7 @@ def build_current_best_process(
         img_g = img_p / 255.0
 
         # return ml.downsample_4(img_g)
+        # return ml.downsample_multi(img_g, [1.0, 0.5])
         return ml.downsample_multi(img_g, [0.5, 0.25])
 
         # return np.hstack(

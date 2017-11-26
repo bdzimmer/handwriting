@@ -14,6 +14,7 @@ import numpy as np
 import sklearn
 
 from handwriting import charclassml as cml, util, charclass, ml
+from handwriting import data
 from handwriting.prediction import Sample
 
 VISUALIZE = False
@@ -59,14 +60,7 @@ def main(argv):
     balance_factor = 64 # 100
     support_ratio_max = 1.0
 
-    sample_filenames = (
-        ["data/20170929_" + str(idx) + ".png.sample.pkl.1"
-         for idx in range(1, 6)] +
-        ["data/20171120_" + str(idx) + ".png.sample.pkl.1"
-         for idx in range(1, 5)])
-    train_filenames = sample_filenames[0:8]
-    test_filenames = sample_filenames[8:9]
-
+    train_filenames, test_filenames = data.train_test_pages([5, 6])
     print("loading and balancing datasets...")
 
     # load training set
