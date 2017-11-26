@@ -27,15 +27,15 @@ def build_classification_process(data_train, labels_train):
 
     """build a classification process"""
 
-    # A lot of this is reused from the character classification process
     pad_width = 16
-    pad_image = lambda x: ml.pad_image(x, pad_width, 104)
+    start_row = 32
+
+    pad_image = partial(ml.pad_image, width=pad_width, height=96)
 
     def prep_image(image):
         """prepare an image (result is still a 2d image)"""
-        start_row = 32
         image = image[start_row:, :]
-        # return 255.0 - ml.grayscale(ml._align(pad_image(image)))
+        # return 255.0 - ml.grayscale(ml.align(pad_image(image)))
         return 255.0 - ml.grayscale(pad_image(image))
 
     def feat_extractor(image):
@@ -43,24 +43,24 @@ def build_classification_process(data_train, labels_train):
         img_p = prep_image(image)
         img_g = img_p / 255.0
         # return np.ravel(img_g)
-        # return np.ravel(ml._max_pool(img_g))
+        # return np.ravel(ml.max_pool(img_g))
 
         # 2017-11-13: 3rd best
-        # return ml._max_pool_multi(img_g, [1, 2])
-        # return ml._downsample_4(img_g)
-        return ml._downsample_multi(img_g, [1.0, 0.5])
-        # return ml._downsample_multi(img_g, [0.5, 0.25])
+        # return ml.max_pool_multi(img_g, [1, 2])
+        # return ml.downsample_4(img_g)
+        return ml.downsample_multi(img_g, [1.0, 0.5])
+        # return ml.downsample_multi(img_g, [0.5, 0.25])
 
         # return np.ravel(ml.column_agg(img_g))
         # return np.hstack(
         #     (ml.column_ex(img_g),
-        #      ml.column_ex(ml._max_pool(img_g))))
+        #      ml.column_ex(ml.max_pool(img_g))))
 
         # 2017-11-13: 2nd best
         # grad_0, grad_1 = np.gradient(img_g)
         # return np.hstack((
-        #     ml._max_pool_multi(grad_0, [2]),
-        #     ml._max_pool_multi(grad_1, [2])))
+        #     ml.max_pool_multi(grad_0, [2]),
+        #     ml.max_pool_multi(grad_1, [2])))
 
         # 2017-11-13: best!
         # img_b = np.array(img_g * 255, dtype=np.uint8)
@@ -416,57 +416,65 @@ def main(argv):
             # TODO: should I be aggregating this differently?
             # mean overlap - higher is better
             res = np.mean([1.0 - y for x in distances for y in x])
-            print(res)
             return res
 
         def build_find_thresh_peaks(peak_sigma, mean_divisor):
-            print(peak_sigma, mean_divisor, ": ", end="", flush=True)
+            """helper"""
             return partial(
                 findletters.find_thresh_peaks,
                 peak_sigma=peak_sigma,
                 mean_divisor=mean_divisor)
 
-        func.grid_search(
+        res = func.grid_search(
             func.pipe(
                 build_find_thresh_peaks,
                 distance_test),
             peak_sigma = [1.0, 1.5, 2.0, 2.5],
             mean_divisor = [0.7, 1.0, 1.3, 1.4, 1.6])
+        for config, score in res:
+            print(
+                "peaks (",
+                config["peak_sigma"], config["mean_divisor"],
+                ") :", score)
 
+        find_comp = lambda x: findwords.find_conc_comp(x[16:-16, :], merge=True)
+        score = distance_test(find_comp, False)
+        print("connected components:", score)
+
+        find_comp_peaks = lambda word_im: findletters.find_combine(
+            word_im, extract_char,
+            find_comp,
+            findletters.find_thresh_peaks)
+        score = distance_test(find_comp_peaks)
+        print("connected components + peaks:", score)
+
+        # load ML model
         proc = util.load_dill(model_filename)
         (classify_char_pos,
          prep_image, feat_extractor, feat_selector,
          classifier, model) = proc
 
         def classify_ml(im):
-            res = model.decision_function(
-                feat_selector([feat_extractor(y) for y in im]))
-            # res_bool = classify_char_pos(im)
+            """helper"""
+            res = model.predict_proba(
+                feat_selector([feat_extractor(y) for y in im]))[:, 1]
             return res
 
-        # classify_char_pos = proc[0]
-
+        thresh = 0.8
         find_classify = lambda word_im: findletters.find_classify_prob(
-                word_im, half_width, extract_char, classify_ml, 0.2)
+                word_im, half_width, extract_char, classify_ml, thresh)
         find_comp_classify = lambda word_im: findletters.find_combine(
             word_im, extract_char,
-            lambda x: findwords.find_conc_comp(x[16:-16, :], merge=True),
+            find_comp,
             find_classify)
         score = distance_test(find_comp_classify, False)
-        print("position distance score - comps + ML:", score)
+        print("connected compoents + ML (", thresh, ") :", score)
 
-        for thresh in [0.0, 0.2, 0.4, 0.6, 0.8]:
+        for thresh in [0.0, 0.2, 0.4, 0.6, 0.7, 0.8, 0.9, 1.0]:
             find_classify = lambda word_im: findletters.find_classify_prob(
                 word_im, half_width, extract_char, classify_ml, thresh)
             score = distance_test(find_classify, False)
-            print("position distance score - ML", thresh, ":", score)
-
-        find_comp_peaks = lambda word_im: findletters.find_combine(
-            word_im, extract_char,
-            lambda x: findwords.find_conc_comp(x[16:-16, :], merge=True),
-            findletters.find_thresh_peaks)
-        score = distance_test(find_comp_peaks)
-        print("position distance score - comps + peaks:", score)
+            print("ML (", thresh, ") :", score)
 
 
 if __name__ == "__main__":

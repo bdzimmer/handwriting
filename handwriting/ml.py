@@ -276,7 +276,7 @@ def pad_image(char_bmp, width, height):
     return new_bmp
 
 
-def _filter_cc(image):
+def filter_cc(image):
     """find connected components in a threshold image and white out
     everything except the second largest"""
 
@@ -309,7 +309,7 @@ def _filter_cc(image):
     return comp_filt
 
 
-def _align(image):
+def align(image):
     """shift an image so the center of mass of the pixels is centered"""
 
     # TODO: this should just operate on grayscale
@@ -337,7 +337,7 @@ def grayscale(image):
     return np.sum(image, axis=2) / 3.0
 
 
-def _downsample(image, scale_factor):
+def downsample(image, scale_factor):
     """downsample an image and unravel to create a feature vector"""
 
     feats = np.ravel(
@@ -348,23 +348,19 @@ def _downsample(image, scale_factor):
     return feats
 
 
-def _downsample_4(image):
+def downsample_4(image):
     """create a feature vector from four downsampling amounts"""
 
-    return np.hstack((
-        _downsample(image, 0.4),
-        _downsample(image, 0.2),
-        _downsample(image, 0.1),
-        _downsample(image, 0.05)))
+    return downsample_multi(image, [0.4, 0.2, 0.1, 0.05])
 
 
-def _downsample_multi(image, scales):
+def downsample_multi(image, scales):
     """create a feature vector from arbitrary downsampling amounts"""
 
-    return np.hstack([_downsample(image, x) for x in scales])
+    return np.hstack([downsample(image, x) for x in scales])
 
 
-def _max_pool(im):
+def max_pool(im):
     """perform 2x2 max pooling"""
 
     return np.max(
@@ -377,7 +373,7 @@ def _max_pool(im):
         axis=-1)
 
 
-def _max_pool_multi(image, ns):
+def max_pool_multi(image, ns):
     """perform multiple levels of max pooling and unravel
     to create a feature vector"""
 
@@ -389,7 +385,7 @@ def _max_pool_multi(image, ns):
     else:
         res = []
     for n in range(2, max(ns) + 1):
-        image = _max_pool(image)
+        image = max_pool(image)
         if n in ns:
             res.append(image)
     return np.hstack([np.ravel(y) for y in res])

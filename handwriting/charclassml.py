@@ -20,27 +20,28 @@ def build_current_best_process(
 
     """build the current best character classification process"""
 
+    start_row = 16
+
     pad_image_96 = partial(ml.pad_image, width=96, height=96)
 
     def prep_image(image):
         """prepare an image (result can still be visualized as an image)"""
-        start_row = 16
         image = image[start_row:, :]
-        return 255.0 - ml.grayscale(ml._align(ml._filter_cc(pad_image_96(image))))
-        # return 255.0 - ml.grayscale(ml._align(pad_image_96(image)))
+        return 255.0 - ml.grayscale(ml.align(ml.filter_cc(pad_image_96(image))))
+        # return 255.0 - ml.grayscale(ml.align(pad_image_96(image)))
 
     def feat_extractor(image):
         """convert image to feature vector"""
         img_p = prep_image(image)
         img_g = img_p / 255.0
 
-        # return ml._downsample_4(img_g)
-        return ml._downsample_multi(img_g, [0.5, 0.25])
+        # return ml.downsample_4(img_g)
+        return ml.downsample_multi(img_g, [0.5, 0.25])
 
         # return np.hstack(
-        #      (ml.column_ex(img_g), ml.column_ex(ml._max_pool(img_g))))
+        #      (ml.column_ex(img_g), ml.column_ex(ml.max_pool(img_g))))
 
-        # fft = np.fft.fft2(ml._max_pool(img_g), norm="ortho")
+        # fft = np.fft.fft2(ml.max_pool(img_g), norm="ortho")
         # return np.hstack((
         #     np.ravel(np.absolute(fft)),
         #     # np.ravel(np.angle(fft)) / np.pi
@@ -48,10 +49,10 @@ def build_current_best_process(
 
         # grad_0, grad_1 = np.gradient(img_g)
         # return np.hstack((
-        #     # ml._max_pool_multi(grad_0, [2]),
-        #     ml._max_pool_multi(grad_1, [2])))
+        #     ml.max_pool_multi(grad_0, [2]),
+        #     ml.max_pool_multi(grad_1, [2])))
 
-        # return np.ravel(ml._max_pool_multi(img_g, [2]))
+        # return np.ravel(ml.max_pool_multi(img_g, [2]))
 
         # img_b = np.array(img_g * 255, dtype=np.uint8)
         # hog = cv2.HOGDescriptor(
