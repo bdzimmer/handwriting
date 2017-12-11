@@ -323,19 +323,30 @@ def filter_cc(image):
     return comp_filt
 
 
-def align(image):
+def align(image, x_align=True, y_align=True):
     """shift an image so the center of mass of the pixels is centered"""
 
     # TODO: this should just operate on grayscale
 
     gray = 255 - np.array(np.sum(image, axis=2) / 3.0, dtype=np.uint8)
 
-    x_size = image.shape[1]
-    y_size = image.shape[0]
-    x_mean = np.sum(np.sum(gray, axis=0) * np.arange(x_size)) / np.sum(gray)
-    y_mean = np.sum(np.sum(gray, axis=1) * np.arange(y_size)) / np.sum(gray)
+    if x_align:
+        x_size = image.shape[1]
+        x_mean = np.sum(np.sum(gray, axis=0) * np.arange(x_size)) / np.sum(gray)
+        x_shift = x_size / 2.0 - x_mean
+    else:
+        x_shift = 0.0
 
-    tmat = np.float32([[1, 0, x_size / 2.0 - x_mean], [0, 1, y_size / 2.0 - y_mean]])
+    if y_align:
+        y_size = image.shape[0]
+        y_mean = np.sum(np.sum(gray, axis=1) * np.arange(y_size)) / np.sum(gray)
+        y_shift = y_size / 2.0 - y_mean
+    else:
+        y_shift = 0.0
+
+    tmat = np.float32(
+        [[1, 0, x_shift],
+         [0, 1, y_shift]])
     new_image = cv2.warpAffine(
         image, tmat, (image.shape[1], image.shape[0]), borderValue=(255, 255, 255))
 

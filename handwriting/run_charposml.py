@@ -36,13 +36,14 @@ def build_classification_process(data_train, labels_train):
     def prep_image(image):
         """prepare an image (result is still a 2d image)"""
         image = image[start_row:, :]
-        # return 255.0 - ml.grayscale(ml.align(pad_image(image)))
-        return 255.0 - ml.grayscale(pad_image(image))
+        return 255.0 - ml.grayscale(ml.align(pad_image(image), x_align=False))
+        # return 255.0 - ml.grayscale(pad_image(image))
 
     def feat_extractor(image):
         """convert image to feature vector"""
         img_p = prep_image(image)
         img_g = img_p / 255.0
+        img_g = img_g / np.max(img_g)
         # return np.ravel(img_g)
         # return np.ravel(ml.max_pool(img_g))
 
@@ -64,7 +65,7 @@ def build_classification_process(data_train, labels_train):
         return np.hstack((
             ml.max_pool_multi(grad_0, [2]),
             ml.max_pool_multi(grad_1, [2]),
-            ml.max_pool_multi(img_g, [2, 3])))
+            ml.max_pool_multi(img_g, [2])))
 
         # grad_0, grad_1 = np.gradient(ml.downsample(img_g, 0.5))
         # return np.hstack((np.ravel(grad_0), np.ravel(grad_1)))
@@ -85,8 +86,9 @@ def build_classification_process(data_train, labels_train):
             chars_working, chars_done = charclass.label_chars(group_pred)
 
     feats_train = [feat_extractor(x) for x in data_train]
-    feat_selector = ml.build_feat_selection_pca(feats_train, 0.99) # 0.90
-    # feat_selector = lambda x: x
+    # feat_selector = ml.build_feat_selection_pca(feats_train, 0.99)
+    # feat_selector = ml.build_feat_selection_pca(feats_train, 0.99)
+    feat_selector = lambda x: x
     # feat_selector = ml.build_scaler(feats_train, robust=True)
 
     feats_train = feat_selector(feats_train)
@@ -114,8 +116,9 @@ def build_classification_process(data_train, labels_train):
         labels=labels_train,
         # hidden_layer_sizes=[(16, 16), (32, 32), (256, 128), (256, 64), (256, 32)],
         # hidden_layer_sizes=[(128, 128, 128), (256, 256, 256)],
-        hidden_layer_sizes=[(128,), (256,), (128, 128), (256, 256)],
-        alpha=[0.0001, 0.001]
+        # hidden_layer_sizes=[(128,), (256,), (128, 128), (256, 256)],
+        hidden_layer_sizes=[(64, 64, 64), (64, 64, 64, 64)],
+        alpha=[0.0001, 0.01]
     )
 
     classify_char_image = ml.build_classification_process(
@@ -223,7 +226,7 @@ def _load_samples(filenames, half_width, offset):
         data = []
         combined_labels = []
 
-        area_true = 1
+        area_true = 2
 
         for word_im in word_ims:
 
@@ -280,7 +283,7 @@ def main(argv):
     model_filename = "models/classify_charpos.pkl"
     half_width = 8
     offset = 0
-    balance_factor = 32 # 32 # 64 # 20 # 15 # 500
+    balance_factor = 128 # 32 # 64 # 20 # 15 # 500
 
     train_filenames, test_filenames = data.train_test_pages([5, 6])
 

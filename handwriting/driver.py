@@ -37,7 +37,8 @@ def current_best_process():
     # find_char_poss = findletters.find_thresh_peaks # oversegments
     # find_char_poss = lambda x: findwords.find_conc_comp( # undersegments
     #     x, merge=False)
-    extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
+    # extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
+    extract_char = util.extract_pos
 
     print("loading models...", end="")
     classify_charpos = util.load_dill("models/classify_charpos.pkl")
