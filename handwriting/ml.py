@@ -155,7 +155,21 @@ def build_nn_classifier(hidden_layer_sizes, alpha):
             hidden_layer_sizes, np.round(alpha, 4), ": ", end="", flush=True)
 
         model = neural_network.MLPClassifier(
-            hidden_layer_sizes=hidden_layer_sizes, alpha=alpha)
+            hidden_layer_sizes=hidden_layer_sizes,
+            activation="relu",
+            solver="adam",
+            alpha=alpha
+            # tol=-1.0e16,
+            # warm_start=True,
+            # max_iter=1
+        )
+
+        # for i in range(10):
+        #     for j in range(10):
+        #         model.fit(feats_train, labels_train)
+        #     print("  ", model.n_iter_, np.round(model.loss_, 5), flush=True)
+        # print("->", end=" ", flush=True)
+
         model.fit(feats_train, labels_train)
 
         return model
@@ -460,9 +474,12 @@ def balance(samples, labels, balance_factor, adjust_func):
 
     grouped_balanced = []
     for label, group in grouped:
+
         if len(group) > target_group_size:
+            print(label, 1.0)
             group_resized = random.sample(group, target_group_size)
         else:
+            print(label, (len(group) * 1.0) / target_group_size)
             group_resized = [x for x in group]
             while len(group_resized) < target_group_size:
                 group_resized.append(adjust_func(random.choice(group)))
@@ -472,26 +489,33 @@ def balance(samples, labels, balance_factor, adjust_func):
     return zip(*pairs)
 
 
-def transform_random(image, trans_size=2.0, rot_size=0.32):
+def transform_random(image, trans_size, rot_size, scale_size):
     """apply a small random transformation to an image"""
 
     # TODO: make ranges of random numbers input parameters
     trans = np.random.rand(2) * trans_size - 0.5 * trans_size
     rot = np.random.rand(4) * rot_size - 0.5 * rot_size
+    scale = 1.0 + np.random.rand(1)[0] * scale_size - 0.5 * scale_size
 
     x_size = image.shape[1]
     y_size = image.shape[0]
 
     trans_to_center = np.float32(
-        [[1, 0, -x_size / 2.0], [0, 1, -y_size / 2.0], [0, 0, 1]])
+        [[1, 0, -x_size / 2.0],
+         [0, 1, -y_size / 2.0],
+         [0, 0, 1]])
     trans_from_center = np.float32(
-        [[1, 0, x_size / 2.0], [0, 1, y_size / 2.0], [0, 0, 1]])
+        [[1, 0, x_size / 2.0],
+         [0, 1, y_size / 2.0],
+         [0, 0, 1]])
     trans_random = np.float32(
         [[1 + rot[0], 0 + rot[1], trans[0]],
          [0 + rot[2], 1 + rot[3], trans[1]],
          [0, 0, 1]])
+    trans_scale = np.identity(3, dtype=np.float32) * scale
 
-    tmat = np.dot(trans_from_center, np.dot(trans_random, trans_to_center))[0:2, :]
+    tmat = np.dot(trans_from_center, np.dot(trans_scale, np.dot(trans_random, trans_to_center)))[0:2, :]
+
     image_new = cv2.warpAffine(
         image, tmat,
         (image.shape[1], image.shape[0]),

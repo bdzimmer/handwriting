@@ -101,3 +101,26 @@ def find_peak_idxs(data, data_range, bandwidth, visualize=False):
         plt.show(block=False)
 
     return peak_idxs, [density[idx] for idx in peak_idxs]
+
+
+def extract_pos(pos, im, border=255):
+    """extract a position (tuple of start and end) from an image"""
+
+    # this is intended to have the correct logic to always return an image
+    # of the width of the position even if it is off the edge of the image
+
+    target_width = pos[1] - pos[0]
+    extract = im[:, np.maximum(pos[0], 0):pos[1]]
+    # print(cpos, extract.shape, im.shape)
+    if extract.shape[1] < target_width:
+        res = np.ones((im.shape[0], target_width, 3), dtype=np.ubyte) * border
+        if pos[0] < 0:
+            pr = (-pos[0], -pos[0] + extract.shape[1])
+        else:
+            pr = (0, extract.shape[1])
+        # print(pr, flush=True)
+        res[:, pr[0]:pr[1]] = extract
+        return res
+    else:
+        res = extract
+    return res

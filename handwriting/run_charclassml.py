@@ -7,6 +7,7 @@ Train a character classifier.
 
 # Copyright (c) 2017 Ben Zimmer. All rights reserved.
 
+from functools import partial
 import random
 import sys
 
@@ -88,8 +89,14 @@ def main(argv):
 
     # balance classes in training set
     data_train, labels_train = ml.balance(
-        data_train_unbalanced, labels_train_unbalanced,
-        balance_factor, ml.transform_random)
+        data_train_unbalanced,
+        labels_train_unbalanced,
+        balance_factor,
+        partial(
+            ml.transform_random,
+            trans_size=2.0,
+            rot_size=0.3,
+            scale_size=0.1))
 
     # load test set
     data_test, labels_test = _load_samples(test_filenames)

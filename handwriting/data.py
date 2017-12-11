@@ -16,7 +16,9 @@ def train_test_pages(test_idxs):
         ["data/20170929_" + str(idx) + ".png.sample.pkl.1"
          for idx in range(1, 6)] +
         ["data/20171120_" + str(idx) + ".png.sample.pkl.1"
-         for idx in range(1, 5)])
+         for idx in range(1, 5)] +
+        ["data/20171209_" + str(idx) + ".png.sample.pkl.1"
+         for idx in range(1, 2)])
 
     train_filenames = [
         sample_filenames[idx]

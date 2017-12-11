@@ -8,6 +8,7 @@ Integration test for character classification.
 # Copyright (c) 2017 Ben Zimmer. All rights reserved.
 
 
+from functools import partial
 import string
 import unittest
 
@@ -33,8 +34,14 @@ class TestsCharClassML(unittest.TestCase):
         # perturb to create 10 examples of each label
         balance_factor = 10
         data, labels = ml.balance(
-            data_single, labels_single,
-            balance_factor, ml.transform_random)
+            data_single,
+            labels_single,
+            balance_factor,
+            partial(
+                ml.transform_random,
+                trans_size=2.0,
+                rot_size=0.3,
+                scale_size=0.1))
 
         # split 75% / 25%  into training and test set
         train_count = int(balance_factor * 0.75)

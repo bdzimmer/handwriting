@@ -48,9 +48,11 @@ def build_classification_process(data_train, labels_train):
 
         # 2017-11-13: 3rd best
         # return ml.max_pool_multi(img_g, [1, 2])
+        # return ml.max_pool_multi(img_g, [2, 3])
         # return ml.downsample_4(img_g)
         # return ml.downsample_multi(img_g, [1.0, 0.5])
         # return ml.downsample_multi(img_g, [0.5, 0.25])
+        # return ml.downsample_multi(img_g, [0.5])
 
         # return np.ravel(ml.column_agg(img_g))
         # return np.hstack(
@@ -61,7 +63,8 @@ def build_classification_process(data_train, labels_train):
         grad_0, grad_1 = np.gradient(img_g)
         return np.hstack((
             ml.max_pool_multi(grad_0, [2]),
-            ml.max_pool_multi(grad_1, [2])))
+            ml.max_pool_multi(grad_1, [2]),
+            ml.max_pool_multi(img_g, [2, 3])))
 
         # grad_0, grad_1 = np.gradient(ml.downsample(img_g, 0.5))
         # return np.hstack((np.ravel(grad_0), np.ravel(grad_1)))
@@ -109,8 +112,10 @@ def build_classification_process(data_train, labels_train):
         n_splits=5,
         feats=feats_train,
         labels=labels_train,
-        hidden_layer_sizes=[(256, 128), (256, 64), (256, 32)],
-        alpha=[0.0001]
+        # hidden_layer_sizes=[(16, 16), (32, 32), (256, 128), (256, 64), (256, 32)],
+        # hidden_layer_sizes=[(128, 128, 128), (256, 256, 256)],
+        hidden_layer_sizes=[(128,), (256,), (128, 128), (256, 256)],
+        alpha=[0.0001, 0.001]
     )
 
     classify_char_image = ml.build_classification_process(
@@ -148,7 +153,7 @@ def _load_words(filenames):
     return word_ims
 
 
-def _load_samples(filenames, half_width):
+def _load_samples(filenames, half_width, offset):
     """load word image slices from multiple files"""
 
     # TODO: double check annotations of periods and quote marks
@@ -164,55 +169,101 @@ def _load_samples(filenames, half_width):
                 if word_pos.result.verified]
 
     # helper functions for extracting images
-    extract_char = lambda cpos, im: im[:, np.maximum(cpos[0], 0):cpos[1]]
-    extract_char_half_width = lambda x, im: extract_char((x - half_width, x + half_width), im)
+    # extract_char = lambda cpos, im: im[:, np.maximum(cpos[0], 0):cpos[1]]
 
-    def keep_valid(ims):
-        """keep images with width greater than 0"""
-        return [x for x in ims if x.shape[1] > 0]
+    extract_char_half_width = lambda x, im: util.extract_pos(
+        (x + offset - half_width, x + offset + half_width), im)
 
-    def half(x, y):
-        """point halfway between two points"""
-        return int((x + y) * 0.5)
+    if False:
 
-    def extract(extract_func):
-        """extract images from valid char positions using extract_func"""
-        res = [(extract_func(char_pos.data, word_im.data),
-                char_pos.result.result, char_pos.data, word_im.data)
-               for word_im in word_ims
-               for char_pos in word_im.result
-               if (char_pos.result.result not in ignore_chars)
-               and char_pos.result.verified
-               and (char_pos.data[1] - char_pos.data[0]) > 1]
-        return res
+        def half(x, y):
+            """point halfway between two points"""
+            return int((x + y) * 0.5)
 
-    # extract images from the ends of all positions in each word
-    char_end_ims = (
-        extract(lambda x, y: extract_char_half_width(x[1], y)) +
-        extract(lambda x, y: extract_char_half_width(x[1] + 1, y)) +
-        extract(lambda x, y: extract_char_half_width(x[1] - 1, y)))
+        def extract(extract_func):
+            """extract images from valid char positions using extract_func"""
+            res = [(extract_func(char_pos.data, word_im.data),
+                    char_pos.result.result, char_pos.data, word_im.data)
+                   for word_im in word_ims
+                   for char_pos in word_im.result
+                   if (char_pos.result.result not in ignore_chars)
+                   and char_pos.result.verified
+                   and (char_pos.data[1] - char_pos.data[0]) > 1]
+            return res
 
-    # extract images from half, one fourth, and three fourths of the way
-    # between starts and ends of each position
-    char_middle_ims = (
-        extract(lambda x, y: extract_char_half_width(
-            half(x[0], x[1]), y)) +
-        extract(lambda x, y: extract_char_half_width(
-            half(x[0], half(x[0], x[1])), y)) +
-        extract(lambda x, y: extract_char_half_width(
-            half(half(x[0], x[1]), x[1]), y)))
+        # extract images from the ends of all positions in each word
+        char_end_ims = (
+            extract(lambda x, y: extract_char_half_width(x[1], y)) +
+            extract(lambda x, y: extract_char_half_width(x[1] + 1, y)) +
+            extract(lambda x, y: extract_char_half_width(x[1] - 1, y)))
 
-    # filter out images that are too small
-    char_end_ims = [x for x in char_end_ims if x[0].shape[1] > 1.5 * half_width]
-    char_middle_ims = [x for x in char_middle_ims if x[0].shape[1] > 1.5 * half_width]
+        # extract images from half, one fourth, and three fourths of the way
+        # between starts and ends of each position
+        char_middle_ims = (
+            extract(lambda x, y: extract_char_half_width(
+                half(x[0], x[1]), y)) +
+            extract(lambda x, y: extract_char_half_width(
+                half(x[0], half(x[0], x[1])), y)) +
+            extract(lambda x, y: extract_char_half_width(
+                half(half(x[0], x[1]), x[1]), y)))
 
-    data_with_src = char_end_ims + char_middle_ims
-    labels = [True] * len(char_end_ims) + [False] * len(char_middle_ims)
+        # filter out images that are too small
+        char_end_ims = [x for x in char_end_ims if x[0].shape[1] > 1.5 * half_width]
+        char_middle_ims = [x for x in char_middle_ims if x[0].shape[1] > 1.5 * half_width]
 
-    combined_labels = [(x, y[1]) for x, y in zip(labels, data_with_src)]
+        data_with_src = char_end_ims + char_middle_ims
+        labels = [True] * len(char_end_ims) + [False] * len(char_middle_ims)
 
-    data = [x[0] for x in data_with_src]
+        combined_labels = [(x, y[1]) for x, y in zip(labels, data_with_src)]
+
+        data = [x[0] for x in data_with_src]
+
+    else:
+
+        data = []
+        combined_labels = []
+
+        area_true = 1
+
+        for word_im in word_ims:
+
+            for char_pos in word_im.result:
+                if ((char_pos.result.result not in ignore_chars)
+                    and char_pos.result.verified
+                    and (char_pos.data[1] - char_pos.data[0]) > 1):
+
+                    char_im = char_pos.result.data
+
+                    for x in range(0, char_im.shape[1]):
+
+                        extract_im = extract_char_half_width(
+                            char_pos.data[0] + x, word_im.data)
+
+                        # choose gap samples from start and end of each
+                        # character position
+                        # label = True if (x < area_true or x > char_im.shape[1] - area_true - 1) else False
+
+                        # choose gap samples only from start
+                        label = True if x < area_true else False
+
+                        data.append(extract_im)
+
+                        combined_labels.append(
+                            (label,
+                             char_pos.result.result))
+
+                        # cv2.namedWindow("word", cv2.WINDOW_NORMAL)
+                        # cv2.namedWindow("extract", cv2.WINDOW_NORMAL)
+                        # disp_word_im = np.copy(word_im.data)
+                        # disp_word_im[:, char_pos.data[0] + x] = (0, 0, 255)
+                        # print(char_pos.data[0] + x, label, char_pos.result.result)
+                        # cv2.imshow("word", disp_word_im)
+                        # cv2.imshow("extract", extract_im)
+                        # cv2.waitKey(200)
+
     return data, combined_labels
+
+
 
 
 def main(argv):
@@ -228,7 +279,8 @@ def main(argv):
 
     model_filename = "models/classify_charpos.pkl"
     half_width = 8
-    balance_factor = 32 # 64 # 20 # 15 # 500
+    offset = 0
+    balance_factor = 32 # 32 # 64 # 20 # 15 # 500
 
     train_filenames, test_filenames = data.train_test_pages([5, 6])
 
@@ -239,13 +291,13 @@ def main(argv):
 
     # load training set
     data_train_unbalanced, labels_train_unbalanced = _load_samples(
-        train_filenames, half_width)
+        train_filenames, half_width, offset)
 
-    print(
-        "training group sizes before balancing:",
-        [(x[0], len(x[1]))
-         for x in ml.group_by_label(
-             data_train_unbalanced, labels_train_unbalanced)])
+    # print(
+    #     "training group sizes before balancing:",
+    #     [(x[0], len(x[1]))
+    #      for x in ml.group_by_label(
+    #          data_train_unbalanced, labels_train_unbalanced)])
 
     # balance classes in training set
     data_train, labels_train = ml.balance(
@@ -253,10 +305,12 @@ def main(argv):
         balance_factor,
         partial(
             ml.transform_random,
-            trans_size=2.0, rot_size=0.2))
+            trans_size=2.0,
+            rot_size=0.2,
+            scale_size=0.1))
 
     # load test set
-    data_test, labels_test = _load_samples(test_filenames, half_width)
+    data_test, labels_test = _load_samples(test_filenames, half_width, offset)
 
     test_gr = dict(ml.group_by_label(data_test, labels_test))
     test_grf = test_gr
@@ -268,14 +322,14 @@ def main(argv):
     print("training size:", len(data_train))
     print("test size:", len(data_test))
 
-    print(
-        "training group sizes:",
-        [(x[0], len(x[1]))
-         for x in ml.group_by_label(data_train, labels_train)])
-    print(
-        "test group sizes:",
-        [(x[0], len(x[1]))
-         for x in ml.group_by_label(data_test, labels_test)])
+    # print(
+    #     "training group sizes:",
+    #     [(x[0], len(x[1]))
+    #      for x in ml.group_by_label(data_train, labels_train)])
+    # print(
+    #     "test group sizes:",
+    #     [(x[0], len(x[1]))
+    #      for x in ml.group_by_label(data_test, labels_test)])
 
     print("discarding letter information from labels")
 
@@ -348,7 +402,6 @@ def main(argv):
             plt.legend(loc="lower right")
             plt.show()
 
-
             # visualize result images
 
             # labels_test_pred = classify_char_pos(data_test)
@@ -369,7 +422,8 @@ def main(argv):
         # test different position finding methods using a distance function
         # on each word
 
-        extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
+        # extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
+        extract_char = util.extract_pos
 
         print("loading test words...", end="", flush=True)
         word_ims_test = _load_words(test_filenames)
