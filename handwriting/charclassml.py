@@ -11,7 +11,7 @@ from functools import partial
 import cv2
 import numpy as np
 
-from handwriting import ml
+from handwriting import ml, improc
 
 VISUALIZE = False
 
@@ -22,13 +22,13 @@ def build_current_best_process(
 
     start_row = 16
 
-    pad_image_96 = partial(ml.pad_image, width=96, height=96)
+    pad_image_96 = partial(improc.pad_image, width=96, height=96)
 
     def prep_image(image):
         """prepare an image (result can still be visualized as an image)"""
         image = image[start_row:, :]
-        return 255.0 - ml.grayscale(ml.align(ml.filter_cc(pad_image_96(image))))
-        # return 255.0 - ml.grayscale(ml.align(pad_image_96(image)))
+        return 255.0 - improc.grayscale(improc.align(improc.filter_cc(pad_image_96(image))))
+        # return 255.0 - improc.grayscale(improc.align(pad_image_96(image)))
 
     def feat_extractor(image):
         """convert image to feature vector"""
@@ -37,7 +37,7 @@ def build_current_best_process(
 
         # return ml.downsample_4(img_g)
         # return ml.downsample_multi(img_g, [1.0, 0.5])
-        return ml.downsample_multi(img_g, [0.5, 0.25])
+        return improc.downsample_multi(img_g, [0.5, 0.25])
 
         # return np.hstack(
         #      (ml.column_ex(img_g), ml.column_ex(ml.max_pool(img_g))))
@@ -74,14 +74,14 @@ def build_current_best_process(
     print("--extracting features from training data")
     feats_train = [feat_extractor(x) for x in data_train]
     print("--building feature selector")
-    feat_selector = ml.build_feat_selection_pca(feats_train, 0.99) # 0.95
+    feat_selector = ml.feat_selection_pca(0.99)(feats_train) # 0.95
     print("--selecting features from training data")
     feats_train = feat_selector(feats_train)
 
     print("--training classifier")
 
     # classifier, classifier_score = ml.train_classifier(
-    #     # fit_model=partial(
+    #     # build_fit_model=partial(
     #     #     ml.build_svc_fit,
     #     #     support_ratio_max=support_ratio_max),
     #     fit_model=ml.build_linear_svc_fit,
@@ -94,19 +94,19 @@ def build_current_best_process(
     #     # c=np.logspace(-2, 2, 7)
     # )
 
-    classifier, classifier_score = ml.train_classifier(
-        fit_model=ml.build_nn_classifier,
+    classifier = ml.train_classifier(
+        build_fit_model=ml.nn_classifier,
         score_func=ml.score_accuracy,
-        n_splits=5,
+        cross_validation=ml.kfold_cross_validation(5),
         feats=feats_train,
         labels=labels_train,
         hidden_layer_sizes=[(256, 128), (256, 64), (256, 32)],
         alpha=[0.0001]
     )
 
-    classify_char_image = ml.build_classification_process(
+    classify_char_image = ml.classification_process(
         feat_extractor, feat_selector, classifier)
 
     return (classify_char_image,
             prep_image, feat_extractor, feat_selector,
-            classifier, classifier_score)
+            classifier)

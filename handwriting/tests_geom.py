@@ -6,14 +6,13 @@ Unit tests for line utility functions.
 # Copyright (c) 2017 Ben Zimmer. All rights reserved.
 
 
-import os
-import pickle
+
 import unittest
 
 import cv2
 import numpy as np
 
-from handwriting import geom
+from handwriting import geom, util
 
 VISUALIZE = False
 
@@ -88,20 +87,13 @@ class TestsGeom(unittest.TestCase):
 def _load_data():
     """load an image and its associated lines file"""
 
-    input_filename = "data/20170929_1.png"
-    lines_filename = input_filename + ".lines.pkl"
+    input_filename = "data/20170929_1.png.sample.pkl.1"
+    image_sample = util.load(input_filename)
 
-    im = cv2.imread(input_filename)
-    # im2 = cv2.cvtColor(im, cv2.COLOR_BGR2LAB)
+    image = image_sample.data
+    lines = [x.data for x in image_sample.result]
 
-    if os.path.exists(lines_filename):
-        with open(lines_filename, "rb") as lines_file:
-            preds = pickle.load(lines_file)
-            lines = preds[0].result
-    else:
-        lines = []
-
-    return im, lines
+    return image, lines
 
 
 def _draw_line_on_image(im, line, color, width, draw_points):

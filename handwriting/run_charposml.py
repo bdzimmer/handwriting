@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 import sklearn
 
-from handwriting import util, charclass, ml, func
+from handwriting import util, charclass, ml, func, improc
 from handwriting import findletters, findwords
 from handwriting import data
 from handwriting.prediction import Sample
@@ -31,50 +31,26 @@ def build_classification_process(data_train, labels_train):
     pad_width = 16
     start_row = 32
 
-    pad_image = partial(ml.pad_image, width=pad_width, height=96)
+    pad_image = partial(improc.pad_image, width=pad_width, height=96)
 
     def prep_image(image):
         """prepare an image (result is still a 2d image)"""
         image = image[start_row:, :]
-        return 255.0 - ml.grayscale(ml.align(pad_image(image), x_align=False))
-        # return 255.0 - ml.grayscale(pad_image(image))
+        return 255.0 - improc.grayscale(
+            improc.align(pad_image(image), x_align=False))
+        # return 255.0 - improc.grayscale(pad_image(image))
 
     def feat_extractor(image):
         """convert image to feature vector"""
         img_p = prep_image(image)
         img_g = img_p / 255.0
         img_g = img_g / np.max(img_g)
-        # return np.ravel(img_g)
-        # return np.ravel(ml.max_pool(img_g))
 
-        # 2017-11-13: 3rd best
-        # return ml.max_pool_multi(img_g, [1, 2])
-        # return ml.max_pool_multi(img_g, [2, 3])
-        # return ml.downsample_4(img_g)
-        # return ml.downsample_multi(img_g, [1.0, 0.5])
-        # return ml.downsample_multi(img_g, [0.5, 0.25])
-        # return ml.downsample_multi(img_g, [0.5])
-
-        # return np.ravel(ml.column_agg(img_g))
-        # return np.hstack(
-        #     (ml.column_ex(img_g),
-        #      ml.column_ex(ml.max_pool(img_g))))
-
-        # 2017-11-13: 2nd best
         grad_0, grad_1 = np.gradient(img_g)
         return np.hstack((
-            ml.max_pool_multi(grad_0, [2]),
-            ml.max_pool_multi(grad_1, [2]),
-            ml.max_pool_multi(img_g, [2])))
-
-        # grad_0, grad_1 = np.gradient(ml.downsample(img_g, 0.5))
-        # return np.hstack((np.ravel(grad_0), np.ravel(grad_1)))
-
-        # 2017-11-13: best!
-        # img_b = np.array(img_g * 255, dtype=np.uint8)
-        # hog = cv2.HOGDescriptor(
-        #     (16, 104), (8, 8), (8, 8), (2, 2), 8)
-        # return np.ravel(hog.compute(img_b))
+            improc.max_pool_multi(grad_0, [2]),
+            improc.max_pool_multi(grad_1, [2]),
+            improc.max_pool_multi(img_g, [2])))
 
     if VISUALIZE:
         # visualize training data
@@ -94,39 +70,35 @@ def build_classification_process(data_train, labels_train):
     feats_train = feat_selector(feats_train)
     print("feature length:", len(feats_train[0]))
 
-    # classifier, classifier_score = ml.train_classifier(
-    #     # fit_model=partial(
-    #     #     ml.build_svc_fit,
-    #     #     support_ratio_max=1.0),
-    #     fit_model=ml.build_linear_svc_fit,
-    #     # score_func=ml.score_accuracy,
-    #     score_func=ml.score_auc,
-    #     n_splits=5,
+    # classifier = ml.train_classifier(
+    #     build_fit_model=ml.linear_svc,
+    #     cross_validation=ml.kfold_cross_validation(5),
+    #     score_func=partial(ml.score_auc, decision_function=True),
     #     feats=feats_train,
     #     labels=labels_train,
-    #     c=np.logspace(-4, 0, 30),
-    #     # gamma=np.logspace(-2, 0, 20)
+    #     gamma=np.logspace(-2, 0, 20),
     # )
 
-    classifier, classifier_score = ml.train_classifier(
-        fit_model=ml.build_nn_classifier,
+    classifier = ml.train_classifier(
+        build_fit_model=ml.nn_classifier,
+        cross_validation=ml.kfold_cross_validation(5),
         score_func=partial(ml.score_auc, decision_function=False),
-        n_splits=5,
         feats=feats_train,
         labels=labels_train,
         # hidden_layer_sizes=[(16, 16), (32, 32), (256, 128), (256, 64), (256, 32)],
         # hidden_layer_sizes=[(128, 128, 128), (256, 256, 256)],
         # hidden_layer_sizes=[(128,), (256,), (128, 128), (256, 256)],
-        hidden_layer_sizes=[(64, 64, 64), (64, 64, 64, 64)],
-        alpha=[0.0001, 0.01]
+        hidden_layer_sizes=[(128, 128, 128), (128, 128, 128, 128), (64, 64), (64, 64, 64), (64, 64, 64, 64)],
+        # alpha=[0.0001, 0.01]
+        alpha=[0.01]
     )
 
-    classify_char_image = ml.build_classification_process(
+    classify_char_image = ml.classification_process(
         feat_extractor, feat_selector, classifier)
 
     return (classify_char_image,
             prep_image, feat_extractor, feat_selector,
-            classifier, classifier_score)
+            classifier)
 
 
 def _load_words(filenames):
@@ -159,7 +131,6 @@ def _load_words(filenames):
 def _load_samples(filenames, half_width, offset):
     """load word image slices from multiple files"""
 
-    # TODO: double check annotations of periods and quote marks
     ignore_chars = ["`", "~"]
 
     # load multiple files
@@ -174,14 +145,14 @@ def _load_samples(filenames, half_width, offset):
     # helper functions for extracting images
     # extract_char = lambda cpos, im: im[:, np.maximum(cpos[0], 0):cpos[1]]
 
-    extract_char_half_width = lambda x, im: util.extract_pos(
+    extract_char_half_width = lambda x, im: improc.extract_pos(
         (x + offset - half_width, x + offset + half_width), im)
 
     if False:
 
-        def half(x, y):
+        def half(start, end):
             """point halfway between two points"""
-            return int((x + y) * 0.5)
+            return int((start + end) * 0.5)
 
         def extract(extract_func):
             """extract images from valid char positions using extract_func"""
@@ -219,11 +190,11 @@ def _load_samples(filenames, half_width, offset):
 
         combined_labels = [(x, y[1]) for x, y in zip(labels, data_with_src)]
 
-        data = [x[0] for x in data_with_src]
+        images = [x[0] for x in data_with_src]
 
     else:
 
-        data = []
+        images = []
         combined_labels = []
 
         area_true = 2
@@ -232,24 +203,24 @@ def _load_samples(filenames, half_width, offset):
 
             for char_pos in word_im.result:
                 if ((char_pos.result.result not in ignore_chars)
-                    and char_pos.result.verified
-                    and (char_pos.data[1] - char_pos.data[0]) > 1):
+                        and char_pos.result.verified
+                        and (char_pos.data[1] - char_pos.data[0]) > 1):
 
                     char_im = char_pos.result.data
 
-                    for x in range(0, char_im.shape[1]):
+                    for x_pos in range(0, char_im.shape[1]):
 
                         extract_im = extract_char_half_width(
-                            char_pos.data[0] + x, word_im.data)
+                            char_pos.data[0] + x_pos, word_im.data)
 
                         # choose gap samples from start and end of each
                         # character position
-                        # label = True if (x < area_true or x > char_im.shape[1] - area_true - 1) else False
+                        # label = True if (x_pos < area_true or x_pos > char_im.shape[1] - area_true - 1) else False
 
                         # choose gap samples only from start
-                        label = True if x < area_true else False
+                        label = True if x_pos < area_true else False
 
-                        data.append(extract_im)
+                        images.append(extract_im)
 
                         combined_labels.append(
                             (label,
@@ -264,9 +235,7 @@ def _load_samples(filenames, half_width, offset):
                         # cv2.imshow("extract", extract_im)
                         # cv2.waitKey(200)
 
-    return data, combined_labels
-
-
+    return images, combined_labels
 
 
 def main(argv):
@@ -283,7 +252,7 @@ def main(argv):
     model_filename = "models/classify_charpos.pkl"
     half_width = 8
     offset = 0
-    balance_factor = 128 # 32 # 64 # 20 # 15 # 500
+    balance_factor = 16 # 32 # 64 # 20 # 15 # 500
 
     train_filenames, test_filenames = data.train_test_pages([5, 6])
 
@@ -307,7 +276,7 @@ def main(argv):
         data_train_unbalanced, labels_train_unbalanced,
         balance_factor,
         partial(
-            ml.transform_random,
+            improc.transform_random,
             trans_size=2.0,
             rot_size=0.2,
             scale_size=0.1))
@@ -363,14 +332,14 @@ def main(argv):
 
         (classify_char_pos,
          prep_image, feat_extractor, feat_selector,
-         classifier, model) = proc
+         classifier) = proc
 
         print("done")
 
         feats_test = feat_selector([feat_extractor(x) for x in data_test])
         # print("score on test dataset:", classifier_score(feats_test, labels_test))
         # labels_test_pred = classify_char_pos(data_test)
-        labels_test_pred = model.predict(feats_test)
+        labels_test_pred = classifier.model.predict(feats_test)
         print("accuracy score on test dataset:", sklearn.metrics.accuracy_score(
             labels_test, labels_test_pred))
 
@@ -379,7 +348,7 @@ def main(argv):
             labels_test, labels_test_pred, [True, False]))
 
         # distances_test = model.decision_function(feats_test)
-        distances_test = model.predict_proba(feats_test)[:, 1]
+        distances_test = classifier.model.predict_proba(feats_test)[:, 1]
         fpr, tpr, _ = sklearn.metrics.roc_curve(
             labels_test, distances_test)
         roc_auc = sklearn.metrics.auc(fpr, tpr)
@@ -426,7 +395,7 @@ def main(argv):
         # on each word
 
         # extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
-        extract_char = util.extract_pos
+        extract_char = improc.extract_pos
 
         print("loading test words...", end="", flush=True)
         word_ims_test = _load_words(test_filenames)
@@ -483,8 +452,8 @@ def main(argv):
             func.pipe(
                 build_find_thresh_peaks,
                 distance_test),
-            peak_sigma = [1.0, 1.5, 2.0, 2.5],
-            mean_divisor = [0.7, 1.0, 1.3, 1.4, 1.6])
+            peak_sigma=[1.0, 1.5, 2.0, 2.5],
+            mean_divisor=[0.7, 1.0, 1.3, 1.4, 1.6])
         for config, score in res:
             print(
                 "peaks (",
@@ -508,15 +477,15 @@ def main(argv):
          prep_image, feat_extractor, feat_selector,
          classifier, model) = proc
 
-        def classify_ml(im):
+        def classify_ml(img):
             """helper"""
             res = model.predict_proba(
-                feat_selector([feat_extractor(y) for y in im]))[:, 1]
+                feat_selector([feat_extractor(y) for y in img]))[:, 1]
             return res
 
         thresh = 0.8
         find_classify = lambda word_im: findletters.find_classify_prob(
-                word_im, half_width, extract_char, classify_ml, thresh)
+            word_im, half_width, extract_char, classify_ml, thresh)
         find_comp_classify = lambda word_im: findletters.find_combine(
             word_im, extract_char,
             find_comp,

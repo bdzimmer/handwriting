@@ -14,7 +14,7 @@ import sys
 import numpy as np
 import sklearn
 
-from handwriting import charclassml as cml, util, charclass, ml
+from handwriting import charclassml as cml, util, charclass, ml, improc
 from handwriting import data
 from handwriting.prediction import Sample
 
@@ -93,7 +93,7 @@ def main(argv):
         labels_train_unbalanced,
         balance_factor,
         partial(
-            ml.transform_random,
+            improc.transform_random,
             trans_size=2.0,
             rot_size=0.3,
             scale_size=0.1))
@@ -130,7 +130,7 @@ def main(argv):
 
         (classify_char_image,
          prep_image, feat_extractor, feat_selector,
-         classifier, classifier_score) = proc
+         classifier) = proc
 
         print("done")
 

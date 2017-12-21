@@ -7,9 +7,9 @@ Machine learning utility module.
 # Copyright (c) 2017 Ben Zimmer. All rights reserved.
 
 from functools import partial
+import inspect
 import random
 
-import cv2
 import numpy as np
 import sklearn
 from sklearn.decomposition import PCA
@@ -17,130 +17,98 @@ from sklearn.model_selection import KFold
 from sklearn.svm import SVC
 from sklearn import neural_network
 
-from handwriting.func import grid_search, pipe
+from handwriting import func
+from handwriting.func import grid_search
 
 
-def build_feat_selection_pca(feats, n_components):
-    """select features by PCA dimensionality reduction"""
+#### Functional wrappers for sklearn models
+
+# These functions take hyperparameters as inputs and return a fit function,
+# which when called with features and or labels returns a predict function.
+
+# Depending on the model type, the predict function may actually be a callable
+# object that has the underlying sklearn model as an instance variable.
+
+
+class CallableModel(object):
+    """Wrapper for sklearn models to make them callable."""
+
+    def __init__(self, model):
+        """init method"""
+        self.model = model
+
+    def __call__(self, feats):
+        """model becomes callable"""
+        return self.model.predict(feats)
+
+
+def feat_selection_pca(n_components):
+    """PCA feature selection"""
 
     pca = PCA(n_components)
-    pca.fit(feats)
-    print("PCA components:", pca.n_components_, "/", pca.n_features_)
-    print("PCA variance explained:", np.sum(pca.explained_variance_ratio_))
 
-    def select(feats_test):
-        """do the feature selection"""
-        return pca.transform(feats_test)
+    def fit(feats):
+        """fit model"""
+        pca.fit(feats)
+        print("PCA components:", pca.n_components_, "/", pca.n_features_)
+        print("PCA variance explained:", np.sum(pca.explained_variance_ratio_))
 
-    return select
+        def select(feats_test):
+            """perform feature selection"""
+            return pca.transform(feats_test)
+
+        return select
+    return fit
 
 
-def build_scaler(feats, robust=True):
-    """build a feature scaler"""
+def feat_scaler(robust):
+    """Feature scaling"""
 
     if robust:
         scaler = sklearn.preprocessing.RobustScaler()
     else:
         scaler = sklearn.preprocessing.StandardScaler()
 
-    scaler.fit(feats)
+    def fit(feats):
+        """fit model"""
+        scaler.fit(feats)
 
-    def scale(feats_test):
-        """peform scaling"""
-        return scaler.transform(feats_test)
+        def scale(feats_test):
+            """peform scaling"""
+            return scaler.transform(feats_test)
 
-    return scale
-
-
-def build_cross_validation(n_splits):
-
-    """Build a function to perform k-fold cross validation to fit
-    a model."""
-
-    kfold = KFold(n_splits=n_splits, shuffle=True, random_state=1)
-
-    def cross_validate(fit_func, score_func, feats, labels):
-
-        """Perform the cross validation."""
-
-        scores = []
-        for idxs_train, idxs_test in kfold.split(feats):
-
-            feats_train = [feats[idx] for idx in idxs_train]
-            labels_train = [labels[idx] for idx in idxs_train]
-            feats_test = [feats[idx] for idx in idxs_test]
-            labels_test = [labels[idx] for idx in idxs_test]
-
-            model = fit_func(
-                feats_train, labels_train)
-
-            score = score_func(model, feats_test, labels_test)
-
-            if score is None:
-                break
-            scores.append(score)
-
-        if len(scores) == n_splits:
-            mean_score = np.mean(scores)
-            return mean_score
-        else:
-            return None
-
-    return cross_validate
+        return scale
+    return fit
 
 
-def build_svc_fit(
-        c, gamma, support_ratio_max):
-
-    """Build a function that fits an RBF SVC, returning None instead of the
-    model if the support ratio exceeds support_ratio_max."""
+def svc(c, gamma, support_ratio_max):
+    """Build a function that fits an RBF SVC."""
 
     def fit(feats_train, labels_train):
         """Perform the fitting."""
 
-        # verify feature min, max, and standard deviation
-        # feats_mat = np.vstack(feats_train)
-        # print("min:", np.min(feats_mat, axis=0))
-        # print("max:", np.max(feats_mat, axis=0))
-        # print("mean:", np.mean(feats_mat, axis=0))
-        # print("std: ", np.std(feats_mat, axis=0))
+        model = SVC(C=c, gamma=gamma, probability=True)
+        model.fit(feats_train, labels_train)
 
-        print(np.round(c, 4), np.round(gamma, 5), ": ", end="", flush=True)
-
-        svc = SVC(C=c, gamma=gamma, probability=True)
-        svc.fit(feats_train, labels_train)
-
-        support_ratio = np.sum(svc.n_support_) / len(feats_train)
-        if support_ratio > support_ratio_max:
-            print("bad support:", np.round(support_ratio, 4), "- skipping")
-            return None
-
-        print(np.round(support_ratio, 4), end=" ")
-
-        return svc
+        return CallableModel(model)
 
     return fit
 
 
-def build_linear_svc_fit(c):
-
+def linear_svc(c):
     """Build a function that fits a linear SVC."""
 
     def fit(feats_train, labels_train):
         """Perform the fitting."""
+        model = sklearn.svm.LinearSVC(C=c)
+        model.fit(feats_train, labels_train)
 
-        print(np.round(c, 4), ": ", end="", flush=True)
-
-        svc = sklearn.svm.LinearSVC(C=c)
-        svc.fit(feats_train, labels_train)
-
-        return svc
+        return CallableModel(model)
 
     return fit
 
 
-def build_nn_classifier(hidden_layer_sizes, alpha):
-
+def nn_classifier(hidden_layer_sizes, alpha):
     """Build a function that fits a neural network classifier."""
 
     def fit(feats_train, labels_train):
@@ -149,10 +117,7 @@ def build_nn_classifier(hidden_layer_sizes, alpha):
         # default model uses relu activation function, adam optimizer.
         # only loss function available is cross-entropy
 
-        # probably will want to experiment with learning rate eventually
-
-        print(
-            hidden_layer_sizes, np.round(alpha, 4), ": ", end="", flush=True)
+        # TODO: experiment with learning rate
 
         model = neural_network.MLPClassifier(
             hidden_layer_sizes=hidden_layer_sizes,
@@ -172,79 +137,151 @@ def build_nn_classifier(hidden_layer_sizes, alpha):
 
         model.fit(feats_train, labels_train)
 
-        return model
+        return CallableModel(model)
 
     return fit
 
 
 def score_accuracy(model, feats_test, labels_test):
 
-    """geneneric sklearn model scoring using accuracy"""
+    """Calculate accuracy of an sklearn model."""
 
-    if model is not None:
-        labels_test_pred = model.predict(feats_test)
-        score = sklearn.metrics.accuracy_score(labels_test, labels_test_pred)
-        print(np.round(score, 4))
-        return score
-    else:
-        return None
+    labels_test_pred = model.predict(feats_test)
+    score = sklearn.metrics.accuracy_score(labels_test, labels_test_pred)
+    return score
+
 
 
 def score_auc(model, feats_test, labels_test, decision_function=True):
 
-    """sklearn model scoring using AUC"""
+    """Calculate ROC AUC of a sklearn classifier."""
 
-    if model is not None:
-        if decision_function:
-            distances_test = model.decision_function(feats_test)
-        else:
-            # only correct for binary classifier
-            predictions = model.predict_proba(feats_test)
-            distances_test = predictions[:, 1]
-
-        fpr, tpr, _ = sklearn.metrics.roc_curve(
-            labels_test, distances_test)
-        roc_auc = sklearn.metrics.auc(fpr, tpr)
-        print(np.round(roc_auc, 4))
-        return roc_auc
+    if decision_function:
+        distances_test = model.decision_function(feats_test)
     else:
-        return None
+        # only correct for binary classifier
+        predictions = model.predict_proba(feats_test)
+        distances_test = predictions[:, 1]
+
+    fpr, tpr, _ = sklearn.metrics.roc_curve(
+        labels_test, distances_test)
+    roc_auc = sklearn.metrics.auc(fpr, tpr)
+    return roc_auc
+
+
+# cross validation is a function which given a fit function, score function,
+# features, and label (and optional callback), finds an aggregate score from
+# fitting and scoring on different splits of the data
+
+# TODO: functionality to abort a call based on bad properties of fit model
+
+def kfold_cross_validation(
+        n_splits):
+
+    """Build a function to perform k-fold cross validation to fit
+    a model."""
+
+    kfold = KFold(n_splits=n_splits, shuffle=True, random_state=1)
+
+    def cross_validate(
+            fit_func, score_func, feats, labels,
+            fold_callback=None):
+
+        """Perform the cross validation."""
+
+        scores = []
+        for idxs_train, idxs_test in kfold.split(feats):
+
+            feats_train = [feats[idx] for idx in idxs_train]
+            labels_train = [labels[idx] for idx in idxs_train]
+            feats_test = [feats[idx] for idx in idxs_test]
+            labels_test = [labels[idx] for idx in idxs_test]
+
+            model = fit_func(
+                feats_train, labels_train)
+
+            score = score_func(model.model, feats_test, labels_test)
+
+            if fold_callback is not None:
+                fold_callback(score)
+
+            if score is None:
+                break
+            scores.append(score)
+
+        if len(scores) == n_splits:
+            mean_score = np.mean(scores)
+            return mean_score
+        else:
+            return None
+
+    return cross_validate
 
 
 def train_classifier(
-        fit_model, score_func, n_splits, feats, labels, **grid_search_params):
+        build_fit_model,
+        cross_validation,
+        score_func,
+        feats, labels,
+        **grid_search_params):
 
     """train a classifier"""
 
     cross_validate = partial(
-        build_cross_validation(n_splits),
+        cross_validation,
         score_func=score_func,
         feats=feats,
         labels=labels)
 
-    fit_model_with_cross_validation = pipe(
-        fit_model,
-        cross_validate)
+    def params_to_string(params):
+        """convert list of params to string"""
+        def fix(val):
+            """helper"""
+            if isinstance(val, float):
+                val = np.round(val, 5)
+            return val
+        return " ".join([str(k) + "=" + str(fix(v)) for k, v in params])
+
+    def fit_model_with_cross_validation(*args, **kwargs):
+        """helper to build parameter string for fold callback log"""
+
+        # get ordered list of fit function parameters
+        param_values_list = []
+        for param_name in func.function_param_order(build_fit_model):
+            if param_name in kwargs.keys():
+                param_values_list.append((param_name, kwargs[param_name]))
+
+        def fold_callback(score):
+            print(params_to_string(param_values_list) + ":", score)
+
+        fit_model = build_fit_model(*args, **kwargs)
+        return cross_validate(fit_model, fold_callback=fold_callback)
+
+    # this is awkward
+    fit_model_with_cross_validation.__signature__ = inspect.signature(build_fit_model)
+
+    def grid_search_callback(param_set, result):
+        """log the result of the current fold to the screen"""
+        print("final:", params_to_string(param_set.items()) + ":", result)
+        print("---")
 
     models = grid_search(
         fit_model_with_cross_validation,
+        gs_callback=grid_search_callback,
         **grid_search_params)
+
     models = [x for x in models if x[1] is not None]
 
     best_params, mean_score = models[np.argmax([x[1] for x in models])]
 
     print("best mean score:", mean_score)
     print("best hyperparameters:", best_params)
-    model = fit_model(**best_params)(feats, labels)
+    model = build_fit_model(**best_params)(feats, labels)
 
-    def predict(feats_test):
-        """helper"""
-        return model.predict(feats_test)
-
-    return predict, model
+    return model
 
 
-def build_classification_process(feat_extractor, feat_selector, classifier):
+def classification_process(feat_extractor, feat_selector, classifier):
     """combine feature extraction, feature selection, and classification"""
 
     def predict(data):
@@ -253,208 +290,6 @@ def build_classification_process(feat_extractor, feat_selector, classifier):
         return classifier(feats)
 
     return predict
-
-
-def pad_image(char_bmp, width, height):
-    """pad char image in a larger image"""
-
-    xoff = abs(int((char_bmp.shape[1] - width) / 2))
-    yoff = abs(int((char_bmp.shape[0] - height) / 2))
-
-    if width >= char_bmp.shape[1]:
-        x_min_old = 0
-        x_max_old = char_bmp.shape[1]
-        x_min_new = xoff
-        x_max_new = char_bmp.shape[1] + xoff
-    else:
-        x_min_old = xoff
-        x_max_old = width + xoff
-        x_min_new = 0
-        x_max_new = width
-
-    if height >= char_bmp.shape[0]:
-        y_min_old = 0
-        y_max_old = char_bmp.shape[0]
-        y_min_new = yoff
-        y_max_new = char_bmp.shape[0] + yoff
-    else:
-        y_min_old = yoff
-        y_max_old = height + yoff
-        y_min_new = 0
-        y_max_new = height
-
-    image_subset = char_bmp[y_min_old:y_max_old, x_min_old:x_max_old]
-    new_bmp = np.ones((height, width, 3), dtype=np.uint8) * 255
-    new_bmp[y_min_new:y_max_new, x_min_new:x_max_new] = image_subset
-
-    return new_bmp
-
-
-def filter_cc(image):
-    """find connected components in a threshold image and white out
-    everything except the second largest"""
-
-    # TODO: better way to select relevant components
-    comp_filt = np.copy(image)
-    gray = 255 - np.array(np.sum(image, axis=2) / 3.0, dtype=np.uint8)
-    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    connectivity = 4
-    comps = cv2.connectedComponentsWithStats(thresh, connectivity, cv2.CV_32S)
-    labels = comps[1]
-    sizes = comps[2][:, cv2.CC_STAT_AREA]
-
-    # get index of second-largest component
-    if len(sizes) > 1:
-        second_largest_idx = np.argsort(sizes)[-2]
-    else:
-        second_largest_idx = np.argsort(sizes)[-1]
-
-    # eliminate everything else
-    for label_idx in range(len(sizes)):
-        if label_idx != second_largest_idx:
-            comp_filt[labels == label_idx] = 255
-
-    # cv2.imshow("image", image)
-    # cv2.imshow("gray", gray)
-    # cv2.imshow("thresh", thresh)
-    # cv2.imshow("comp_filt", comp_filt)
-    # cv2.waitKey()
-
-    return comp_filt
-
-
-def align(image, x_align=True, y_align=True):
-    """shift an image so the center of mass of the pixels is centered"""
-
-    # TODO: this should just operate on grayscale
-
-    gray = 255 - np.array(np.sum(image, axis=2) / 3.0, dtype=np.uint8)
-
-    if x_align:
-        x_size = image.shape[1]
-        x_mean = np.sum(np.sum(gray, axis=0) * np.arange(x_size)) / np.sum(gray)
-        x_shift = x_size / 2.0 - x_mean
-    else:
-        x_shift = 0.0
-
-    if y_align:
-        y_size = image.shape[0]
-        y_mean = np.sum(np.sum(gray, axis=1) * np.arange(y_size)) / np.sum(gray)
-        y_shift = y_size / 2.0 - y_mean
-    else:
-        y_shift = 0.0
-
-    tmat = np.float32(
-        [[1, 0, x_shift],
-         [0, 1, y_shift]])
-    new_image = cv2.warpAffine(
-        image, tmat, (image.shape[1], image.shape[0]), borderValue=(255, 255, 255))
-
-    # cv2.imshow("image", image)
-    # cv2.imshow("new_image", new_image)
-    # cv2.waitKey()
-
-    return new_image
-
-
-def grayscale(image):
-    """convert RGB ubyte image to grayscale"""
-    return np.sum(image, axis=2) / 3.0
-
-
-def downsample(image, scale_factor):
-    """downsample an image and unravel to create a feature vector"""
-
-    feats = cv2.resize(
-        image,
-        (int(image.shape[0] * scale_factor),
-         int(image.shape[1] * scale_factor)))
-    return feats
-
-
-def downsample_4(image):
-    """create a feature vector from four downsampling amounts"""
-
-    return downsample_multi(image, [0.4, 0.2, 0.1, 0.05])
-
-
-def downsample_multi(image, scales):
-    """create a feature vector from arbitrary downsampling amounts"""
-
-    return np.hstack([np.ravel(downsample(image, x)) for x in scales])
-
-
-def max_pool(im):
-    """perform 2x2 max pooling"""
-
-    return np.max(
-        np.stack(
-            (im[0::2, 0::2],
-             im[0::2, 1::2],
-             im[1::2, 0::2],
-             im[1::2, 1::2]),
-            axis=-1),
-        axis=-1)
-
-
-def max_pool_multi(image, ns):
-    """perform multiple levels of max pooling and unravel
-    to create a feature vector"""
-
-    # TODO: move this to a higher level
-    # image_gray = _grayscale(image)
-
-    if 1 in ns:
-        res = [image]
-    else:
-        res = []
-    for n in range(2, max(ns) + 1):
-        image = max_pool(image)
-        if n in ns:
-            res.append(image)
-    return np.hstack([np.ravel(y) for y in res])
-
-
-def column_ex(gray):
-
-    """experimental feature - something like the center of mass of
-    overlapping columns of the image"""
-
-    width = 2
-    # mul_mat = np.arange(y_size)[:, np.newaxis]
-    # for some reason, it works a lot better to not divide by the sum of the
-    # whole window but only the first column.
-    mul_mat = np.linspace(0, 1, gray.shape[0])[:, np.newaxis]
-
-    y_agg = np.array([(np.sum(gray[:, idx + width] * mul_mat) /
-                       np.sum(gray[:, idx]))
-                      for idx in range(gray.shape[1] - width)])
-    y_agg[~np.isfinite(y_agg)] = 0.0
-
-    res = np.hstack((y_agg, np.diff(y_agg)))
-
-    return res
-
-
-#def column_ex_im(gray):
-#
-#    """image version of column_ex"""
-#
-#    y_size = gray.shape[0] * 1.0
-#    y_agg = np.array([np.sum(gray[:, idx:(idx + 3)] * np.arange(y_size)[:, np.newaxis] / np.sum(gray[:, idx]))
-#                      for idx in range(gray.shape[1] - 3)])
-#    y_agg[np.isnan(y_agg)] = y_size
-#    # data = np.array(np.clip(y_agg, 0, y_size - 2), dtype=np.int)
-#    data = np.array(
-#        np.clip(np.diff(y_agg) + y_size / 2.0, 0, y_size - 2), dtype=np.int)
-#
-#    res_im = np.zeros(gray.shape)
-#    for idx in range(data.shape[0]):
-#        y_val = data[idx]
-#        res_im[y_val, idx] = 1.0
-#        res_im[y_val + 1, idx] = 1.0
-#
-#    return res_im
 
 
 def group_by_label(samples, labels):
@@ -498,42 +333,3 @@ def balance(samples, labels, balance_factor, adjust_func):
 
     pairs = [(y, x[0]) for x in grouped_balanced for y in x[1]]
     return zip(*pairs)
-
-
-def transform_random(image, trans_size, rot_size, scale_size):
-    """apply a small random transformation to an image"""
-
-    # TODO: make ranges of random numbers input parameters
-    trans = np.random.rand(2) * trans_size - 0.5 * trans_size
-    rot = np.random.rand(4) * rot_size - 0.5 * rot_size
-    scale = 1.0 + np.random.rand(1)[0] * scale_size - 0.5 * scale_size
-
-    x_size = image.shape[1]
-    y_size = image.shape[0]
-
-    trans_to_center = np.float32(
-        [[1, 0, -x_size / 2.0],
-         [0, 1, -y_size / 2.0],
-         [0, 0, 1]])
-    trans_from_center = np.float32(
-        [[1, 0, x_size / 2.0],
-         [0, 1, y_size / 2.0],
-         [0, 0, 1]])
-    trans_random = np.float32(
-        [[1 + rot[0], 0 + rot[1], trans[0]],
-         [0 + rot[2], 1 + rot[3], trans[1]],
-         [0, 0, 1]])
-    trans_scale = np.identity(3, dtype=np.float32) * scale
-
-    tmat = np.dot(trans_from_center, np.dot(trans_scale, np.dot(trans_random, trans_to_center)))[0:2, :]
-
-    image_new = cv2.warpAffine(
-        image, tmat,
-        (image.shape[1], image.shape[0]),
-        borderValue=(255, 255, 255))
-
-    # cv2.imshow("image", image)
-    # cv2.imshow("new_image", image_new)
-    # cv2.waitKey()
-
-    return image_new

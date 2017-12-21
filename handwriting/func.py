@@ -85,8 +85,7 @@ def grid_search(
 
     if gs_param_order is None:
         # get names of args in function signature
-        # param_order = inspect.getargspec(func).args
-        gs_param_order = inspect.signature(func).parameters.keys()
+        gs_param_order = function_param_order(func)
 
     param_values_list = []
     for param_name in gs_param_order:
@@ -103,3 +102,8 @@ def grid_search(
             gs_callback(param_set, res)
 
     return all_results
+
+
+def function_param_order(func):
+    """get names of args infunction signature"""
+    return inspect.signature(func).parameters.keys()

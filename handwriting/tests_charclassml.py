@@ -14,7 +14,7 @@ import unittest
 
 import numpy as np
 
-from handwriting import charclassml as cml, analysisimage, charclass, ml
+from handwriting import charclassml as cml, analysisimage, charclass, ml, improc
 from handwriting.prediction import Sample
 
 VISUALIZE = False
@@ -38,7 +38,7 @@ class TestsCharClassML(unittest.TestCase):
             labels_single,
             balance_factor,
             partial(
-                ml.transform_random,
+                improc.transform_random,
                 trans_size=2.0,
                 rot_size=0.3,
                 scale_size=0.1))
@@ -71,7 +71,7 @@ class TestsCharClassML(unittest.TestCase):
 
         (classify_char_image,
          prep_image, feat_extractor, feat_selector,
-         classifier, model) = res
+         classifier) = res
 
         # feats_test = feat_selector([feat_extractor(x) for x in data_test])
         # score = ml.score_auc(model, feats_test, labels_test)
