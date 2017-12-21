@@ -81,7 +81,7 @@ def build_classification_process(data_train, labels_train):
 
     classifier = ml.train_classifier(
         build_fit_model=ml.nn_classifier,
-        cross_validation=ml.kfold_cross_validation(5),
+        cross_validation=ml.kfold_cross_validation(10),
         score_func=partial(ml.score_auc, decision_function=False),
         feats=feats_train,
         labels=labels_train,
@@ -90,7 +90,7 @@ def build_classification_process(data_train, labels_train):
         # hidden_layer_sizes=[(128,), (256,), (128, 128), (256, 256)],
         hidden_layer_sizes=[(128, 128, 128), (128, 128, 128, 128), (64, 64), (64, 64, 64), (64, 64, 64, 64)],
         # alpha=[0.0001, 0.01]
-        alpha=[0.01]
+        alpha=[0.0001, 0.001, 0.01]
     )
 
     classify_char_image = ml.classification_process(
@@ -252,7 +252,7 @@ def main(argv):
     model_filename = "models/classify_charpos.pkl"
     half_width = 8
     offset = 0
-    balance_factor = 16 # 32 # 64 # 20 # 15 # 500
+    balance_factor = 64
 
     train_filenames, test_filenames = data.train_test_pages([5, 6])
 

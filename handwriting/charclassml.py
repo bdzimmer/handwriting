@@ -101,7 +101,7 @@ def build_current_best_process(
         feats=feats_train,
         labels=labels_train,
         hidden_layer_sizes=[(256, 128), (256, 64), (256, 32)],
-        alpha=[0.0001]
+        alpha=[0.0001, 0.001, 0.01]
     )
 
     classify_char_image = ml.classification_process(
