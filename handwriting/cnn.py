@@ -165,7 +165,8 @@ def experimental_cnn(
                 "Estimated completion time:",
                 time.strftime(
                     '%Y-%m-%d %H:%M:%S',
-                    time.localtime(start_time + total_time_est)))
+                    time.localtime(start_time + total_time_est)),
+                "(" + str(np.round(total_time_est, 2)) + " sec)")
 
             if log_file is not None:
                 print(", ".join(
