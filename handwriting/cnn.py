@@ -23,7 +23,6 @@ class ExperimentalCNN(nn.Module):
     def __init__(self, n_classes):
         """init function"""
         super().__init__()
-
         # input is a 96 * 96 grayscale image
 
         # conv2d args are in channels, out channels, kernel size
@@ -44,8 +43,13 @@ class ExperimentalCNN(nn.Module):
         return x
 
 
-def experimental_cnn(max_epochs):
-    """build a function that fits a CNN"""
+def experimental_cnn(
+        max_epochs,
+        learning_rate,
+        momentum,
+        log_filename=None):
+
+    """Build a function that fits a CNN."""
 
     def fit(feats_train, labels_train):
         """Perform fitting."""
@@ -55,10 +59,12 @@ def experimental_cnn(max_epochs):
         n_classes = len(unique_labels)
 
         net = ExperimentalCNN(n_classes)
-        # TODO: expose optimizer params
-        optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+        # in the example, learning rate was 0.001 and momentum was 0.9
+        optimizer = optim.SGD(
+            net.parameters(), lr=learning_rate, momentum=momentum)
         loss_func = nn.CrossEntropyLoss()
 
+        log_file = open(log_filename, "w") if log_filename is not None else None
         start_time = time.time()
 
         for epoch in range(max_epochs):
@@ -66,9 +72,12 @@ def experimental_cnn(max_epochs):
             idxs_shuffled = np.random.permutation(len(labels_train))
             epoch_loss = 0.0
 
+            epoch_grad_magnitude = 0.0
+
+            # TODO: figure out how to use minibatches properly
             for idx, idx_shuffled in enumerate(idxs_shuffled):
 
-                # something in here is resetting the threads
+                # something in here is resetting the thread count
                 # torch.set_num_threads(2)
 
                 img = np.array(feats_train[idx_shuffled], dtype=np.float32)
@@ -92,11 +101,34 @@ def experimental_cnn(max_epochs):
 
                 epoch_loss += loss.data[0]
 
+                # TODO: how do I look at the size of the gradient?
+                # this is how SGD does it
+                for group in optimizer.param_groups:
+                    for p in group["params"]:
+                        if p.grad is not None:
+                            # not sure which one of these is more appropriate
+                            # epoch_grad_magnitude += torch.norm(p.grad.data)
+                            epoch_grad_magnitude += torch.sum(torch.abs(p.grad.data))
+
                 if idx % 100 == 0:
                     print(idx, np.round(epoch_loss / (idx + 1), 6))
 
+            mean_loss = epoch_loss / (idx + 1)
+            mean_grad_magnitude = epoch_grad_magnitude / (idx + 1)
+
             total_time = time.time() - start_time
-            print("epoch", epoch, ":", np.round(epoch_loss / (idx + 1), 6), np.round(total_time), "sec")
+            print(
+                "epoch", epoch, ":",
+                np.round(mean_loss),
+                np.round(total_time), "sec")
+            if log_file is not None:
+                print(", ".join(
+                    [str(x) for x in [
+                        epoch,
+                        mean_loss,
+                        mean_grad_magnitude,
+                        total_time]]),
+                    file=log_file, flush=True)
 
         def predict(feats_test):
             """make predictions using the fitted model"""

@@ -58,8 +58,7 @@ def main(argv):
     min_label_examples = 1
     # remove_labels = ["\"", "!", "/", "~"]
     remove_labels = ["~", "_", ":", "*"]
-    balance_factor = 64 # 100
-    support_ratio_max = 1.0
+    balance_factor = 8 # 64 # 100
 
     train_filenames, test_filenames = data.train_test_pages([5, 6])
     print("loading and balancing datasets...")
@@ -126,7 +125,7 @@ def main(argv):
         print("training model...")
 
         proc = cml.build_current_best_process(
-            data_train, labels_train, support_ratio_max)
+            data_train, labels_train)
 
         (classify_char_image,
          prep_image, feat_extractor, feat_selector,

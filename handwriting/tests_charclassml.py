@@ -67,7 +67,7 @@ class TestsCharClassML(unittest.TestCase):
         print("training model")
 
         res = cml.build_current_best_process(
-            data_train, labels_train, support_ratio_max=0.97)
+            data_train, labels_train)
 
         (classify_char_image,
          prep_image, feat_extractor, feat_selector,
