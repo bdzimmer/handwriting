@@ -11,7 +11,7 @@ from functools import partial
 import cv2
 import numpy as np
 
-from handwriting import ml, improc
+from handwriting import ml, improc, cnn
 
 VISUALIZE = False
 
@@ -38,6 +38,7 @@ def build_current_best_process(
         # return ml.downsample_4(img_g)
         # return ml.downsample_multi(img_g, [1.0, 0.5])
         return improc.downsample_multi(img_g, [0.5, 0.25])
+        # return img_g
 
         # return np.hstack(
         #      (ml.column_ex(img_g), ml.column_ex(ml.max_pool(img_g))))
@@ -75,6 +76,7 @@ def build_current_best_process(
     feats_train = [feat_extractor(x) for x in data_train]
     print("--building feature selector")
     feat_selector = ml.feat_selection_pca(0.99)(feats_train) # 0.95
+    # feat_selector = lambda x: x
     print("--selecting features from training data")
     feats_train = feat_selector(feats_train)
 
@@ -97,12 +99,16 @@ def build_current_best_process(
     classifier = ml.train_classifier(
         build_fit_model=ml.nn_classifier,
         score_func=ml.score_accuracy,
-        cross_validation=ml.kfold_cross_validation(5),
+        cross_validation=ml.kfold_cross_validation(5), # ml.holdout_validation(0.2),
         feats=feats_train,
         labels=labels_train,
         hidden_layer_sizes=[(256, 128), (256, 64), (256, 32)],
         alpha=[0.0001, 0.001, 0.01]
     )
+
+    # classifier = cnn.experimental_cnn(256)(
+    #     feats_train,
+    #     labels_train)
 
     classify_char_image = ml.classification_process(
         feat_extractor, feat_selector, classifier)
