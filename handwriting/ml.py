@@ -13,7 +13,7 @@ import random
 import numpy as np
 import sklearn
 from sklearn.decomposition import PCA
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, ShuffleSplit
 from sklearn.svm import SVC
 from sklearn import neural_network
 
@@ -81,7 +81,7 @@ def feat_scaler(robust):
     return fit
 
 
-def svc(c, gamma, support_ratio_max):
+def svc(c, gamma):
     """Build a function that fits an RBF SVC."""
 
     def fit(feats_train, labels_train):
@@ -175,13 +175,28 @@ def score_auc(model, feats_test, labels_test, decision_function=True):
 
 # TODO: functionality to abort a call based on bad properties of fit model
 
-def kfold_cross_validation(
-        n_splits):
-
-    """Build a function to perform k-fold cross validation to fit
-    a model."""
+def kfold_cross_validation(n_splits):
+    """Build a function to fit models using k-fold cross validation."""
 
     kfold = KFold(n_splits=n_splits, shuffle=True, random_state=1)
+
+    return func.pipe(
+        generic_validation(kfold),
+        lambda x: np.mean(x) if len(x) == n_splits else None)
+
+
+def holdout_validation(test_frac):
+    """Build a function to fit models using holdout cross validation."""
+
+    shufflesplit = ShuffleSplit(1, test_frac)
+
+    return func.pipe(
+        generic_validation(shufflesplit),
+        lambda x: x[0])
+
+
+def generic_validation(cross_validator):
+    """Fit models using sklearn cross validators."""
 
     def cross_validate(
             fit_func, score_func, feats, labels,
@@ -190,8 +205,7 @@ def kfold_cross_validation(
         """Perform the cross validation."""
 
         scores = []
-        for idxs_train, idxs_test in kfold.split(feats):
-
+        for idxs_train, idxs_test in cross_validator.split(feats):
             feats_train = [feats[idx] for idx in idxs_train]
             labels_train = [labels[idx] for idx in idxs_train]
             feats_test = [feats[idx] for idx in idxs_test]
@@ -209,11 +223,7 @@ def kfold_cross_validation(
                 break
             scores.append(score)
 
-        if len(scores) == n_splits:
-            mean_score = np.mean(scores)
-            return mean_score
-        else:
-            return None
+        return scores
 
     return cross_validate
 
@@ -227,12 +237,6 @@ def train_classifier(
 
     """train a classifier"""
 
-    cross_validate = partial(
-        cross_validation,
-        score_func=score_func,
-        feats=feats,
-        labels=labels)
-
     def params_to_string(params):
         """convert list of params to string"""
         def fix(val):
@@ -242,28 +246,31 @@ def train_classifier(
             return val
         return " ".join([str(k) + "=" + str(fix(v)) for k, v in params])
 
+    def grid_search_callback(param_set, result):
+        """log the result for the current hyperparamers to the screen"""
+        print("final:", params_to_string(param_set.items()) + ":", result)
+        print("---")
+
+    cross_validate = partial(
+        cross_validation,
+        score_func=score_func,
+        feats=feats,
+        labels=labels)
+
     def fit_model_with_cross_validation(*args, **kwargs):
         """helper to build parameter string for fold callback log"""
-
         # get ordered list of fit function parameters
         param_values_list = []
         for param_name in func.function_param_order(build_fit_model):
             if param_name in kwargs.keys():
                 param_values_list.append((param_name, kwargs[param_name]))
-
         def fold_callback(score):
             print(params_to_string(param_values_list) + ":", score)
-
         fit_model = build_fit_model(*args, **kwargs)
         return cross_validate(fit_model, fold_callback=fold_callback)
 
     # this is awkward
     fit_model_with_cross_validation.__signature__ = inspect.signature(build_fit_model)
-
-    def grid_search_callback(param_set, result):
-        """log the result of the current fold to the screen"""
-        print("final:", params_to_string(param_set.items()) + ":", result)
-        print("---")
 
     models = grid_search(
         fit_model_with_cross_validation,
