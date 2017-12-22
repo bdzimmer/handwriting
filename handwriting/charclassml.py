@@ -8,7 +8,6 @@ Machine learning for character classification.
 
 from functools import partial
 
-import cv2
 import numpy as np
 
 from handwriting import ml, improc, cnn
@@ -30,7 +29,7 @@ def build_current_best_process(
         # return 255.0 - improc.grayscale(improc.align(pad_image_96(image)))
 
 
-    if True:
+    if False:
 
         def feat_extractor(image):
             """convert image to feature vector"""
@@ -119,7 +118,8 @@ def build_current_best_process(
         feats_train = feat_selector(feats_train)
 
         classifier = cnn.experimental_cnn(
-            max_epochs=256,
+            batch_size=8,
+            max_epochs=64,
             learning_rate=0.001,
             momentum=0.9,
             log_filename="log.txt"

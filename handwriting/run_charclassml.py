@@ -58,7 +58,7 @@ def main(argv):
     min_label_examples = 1
     # remove_labels = ["\"", "!", "/", "~"]
     remove_labels = ["~", "_", ":", "*"]
-    balance_factor = 8 # 64 # 100
+    balance_factor = 32 # 64 # 100
 
     train_filenames, test_filenames = data.train_test_pages([5, 6])
     print("loading and balancing datasets...")
