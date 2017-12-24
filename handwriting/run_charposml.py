@@ -16,7 +16,7 @@ import cv2
 import numpy as np
 import sklearn
 
-from handwriting import util, charclass, ml, func, improc
+from handwriting import util, charclass, ml, func, improc, cnn
 from handwriting import findletters, findwords
 from handwriting import data
 from handwriting.prediction import Sample
@@ -40,58 +40,82 @@ def build_classification_process(data_train, labels_train):
             improc.align(pad_image(image), x_align=False))
         # return 255.0 - improc.grayscale(pad_image(image))
 
-    def feat_extractor(image):
-        """convert image to feature vector"""
-        img_p = prep_image(image)
-        img_g = img_p / 255.0
-        img_g = img_g / np.max(img_g)
+    if False:
 
-        grad_0, grad_1 = np.gradient(img_g)
-        return np.hstack((
-            improc.max_pool_multi(grad_0, [2]),
-            improc.max_pool_multi(grad_1, [2]),
-            improc.max_pool_multi(img_g, [2])))
+        def feat_extractor(image):
+            """convert image to feature vector"""
+            img_p = prep_image(image)
+            img_g = img_p / 255.0
+            img_g = img_g / np.max(img_g)
 
-    if VISUALIZE:
-        # visualize training data
-        for cur_label, group in ml.group_by_label(data_train, labels_train):
-            print("label:", cur_label)
-            group_prepped = [(prep_image(x), None) for x in group]
-            # print(np.min(group_prepped[0][0]), np.max(group_prepped[0][0]))
-            group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
-            chars_working, chars_done = charclass.label_chars(group_pred)
+            grad_0, grad_1 = np.gradient(img_g)
+            return np.hstack((
+                improc.max_pool_multi(grad_0, [2]),
+                improc.max_pool_multi(grad_1, [2]),
+                improc.max_pool_multi(img_g, [2])))
 
-    feats_train = [feat_extractor(x) for x in data_train]
-    # feat_selector = ml.build_feat_selection_pca(feats_train, 0.99)
-    # feat_selector = ml.build_feat_selection_pca(feats_train, 0.99)
-    feat_selector = lambda x: x
-    # feat_selector = ml.build_scaler(feats_train, robust=True)
+        if VISUALIZE:
+            # visualize training data
+            for cur_label, group in ml.group_by_label(data_train, labels_train):
+                print("label:", cur_label)
+                group_prepped = [(prep_image(x), None) for x in group]
+                # print(np.min(group_prepped[0][0]), np.max(group_prepped[0][0]))
+                group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
+                chars_working, chars_done = charclass.label_chars(group_pred)
 
-    feats_train = feat_selector(feats_train)
-    print("feature length:", len(feats_train[0]))
+        feats_train = [feat_extractor(x) for x in data_train]
+        # feat_selector = ml.build_feat_selection_pca(feats_train, 0.99)
+        # feat_selector = ml.build_feat_selection_pca(feats_train, 0.99)
+        feat_selector = lambda x: x
+        # feat_selector = ml.build_scaler(feats_train, robust=True)
 
-    # classifier = ml.train_classifier(
-    #     build_fit_model=ml.linear_svc,
-    #     cross_validation=ml.kfold_cross_validation(5),
-    #     score_func=partial(ml.score_auc, decision_function=True),
-    #     feats=feats_train,
-    #     labels=labels_train,
-    #     gamma=np.logspace(-2, 0, 20),
-    # )
+        feats_train = feat_selector(feats_train)
+        print("feature length:", len(feats_train[0]))
 
-    classifier = ml.train_classifier(
-        build_fit_model=ml.nn_classifier,
-        cross_validation=ml.kfold_cross_validation(10),
-        score_func=partial(ml.score_auc, decision_function=False),
-        feats=feats_train,
-        labels=labels_train,
-        # hidden_layer_sizes=[(16, 16), (32, 32), (256, 128), (256, 64), (256, 32)],
-        # hidden_layer_sizes=[(128, 128, 128), (256, 256, 256)],
-        # hidden_layer_sizes=[(128,), (256,), (128, 128), (256, 256)],
-        hidden_layer_sizes=[(128, 128, 128), (128, 128, 128, 128), (64, 64), (64, 64, 64), (64, 64, 64, 64)],
-        # alpha=[0.0001, 0.01]
-        alpha=[0.0001, 0.001, 0.01]
-    )
+        # classifier = ml.train_classifier(
+        #     build_fit_model=ml.linear_svc,
+        #     cross_validation=ml.kfold_cross_validation(5),
+        #     score_func=partial(ml.score_auc, decision_function=True),
+        #     feats=feats_train,
+        #     labels=labels_train,
+        #     gamma=np.logspace(-2, 0, 20),
+        # )
+
+        classifier = ml.train_classifier(
+            build_fit_model=ml.nn_classifier,
+            cross_validation=ml.kfold_cross_validation(10),
+            score_func=partial(ml.score_auc, decision_function=False),
+            feats=feats_train,
+            labels=labels_train,
+            # hidden_layer_sizes=[(16, 16), (32, 32), (256, 128), (256, 64), (256, 32)],
+            # hidden_layer_sizes=[(128, 128, 128), (256, 256, 256)],
+            # hidden_layer_sizes=[(128,), (256,), (128, 128), (256, 256)],
+            hidden_layer_sizes=[(128, 128, 128), (128, 128, 128, 128), (64, 64), (64, 64, 64), (64, 64, 64, 64)],
+            # alpha=[0.0001, 0.01]
+            alpha=[0.0001, 0.001, 0.01]
+        )
+    else:
+
+        def feat_extractor(image):
+            """convert image to feature vector"""
+            img_p = prep_image(image)
+            img_g = img_p / 255.0
+            return img_g
+
+        feats_train = [feat_extractor(x) for x in data_train]
+        feat_selector = lambda x: x
+        feats_train = feat_selector(feats_train)
+
+        classifier = cnn.experimental_cnn(
+            batch_size=16, # 8
+            max_epochs=2048,
+            learning_rate=0.001,
+            momentum=0.9,
+            log_filename="log_test.txt"
+        )(
+            feats_train,
+            labels_train
+        )
 
     classify_char_image = ml.classification_process(
         feat_extractor, feat_selector, classifier)
@@ -339,7 +363,7 @@ def main(argv):
         feats_test = feat_selector([feat_extractor(x) for x in data_test])
         # print("score on test dataset:", classifier_score(feats_test, labels_test))
         # labels_test_pred = classify_char_pos(data_test)
-        labels_test_pred = classifier.model.predict(feats_test)
+        labels_test_pred = classifier(feats_test)
         print("accuracy score on test dataset:", sklearn.metrics.accuracy_score(
             labels_test, labels_test_pred))
 
@@ -347,47 +371,48 @@ def main(argv):
         print(sklearn.metrics.confusion_matrix(
             labels_test, labels_test_pred, [True, False]))
 
-        # distances_test = model.decision_function(feats_test)
-        distances_test = classifier.model.predict_proba(feats_test)[:, 1]
-        fpr, tpr, _ = sklearn.metrics.roc_curve(
-            labels_test, distances_test)
-        roc_auc = sklearn.metrics.auc(fpr, tpr)
-        print("ROC AUC on test dataset:", roc_auc)
+        if False:
+            # distances_test = model.decision_function(feats_test)
+            distances_test = classifier.model.predict_proba(feats_test)[:, 1]
+            fpr, tpr, _ = sklearn.metrics.roc_curve(
+                labels_test, distances_test)
+            roc_auc = sklearn.metrics.auc(fpr, tpr)
+            print("ROC AUC on test dataset:", roc_auc)
+
+            if VISUALIZE:
+
+                # visualize ROC curve
+                from matplotlib import pyplot as plt
+
+                plt.figure()
+                plt.plot(
+                    fpr, tpr, color="red",
+                    lw=2, label="ROC curve (area = " + str(roc_auc) + ")")
+                plt.plot([0, 1], [0, 1], color="blue", lw=2, linestyle='--')
+                plt.xlim([0.0, 1.0])
+                plt.ylim([0.0, 1.05])
+                plt.xlabel("FPR")
+                plt.ylabel("TPR")
+                plt.title("ROC")
+                plt.legend(loc="lower right")
+                plt.show()
+
+                # visualize result images
+
+                # labels_test_pred = classify_char_pos(data_test)
+                chars_confirmed = []
+                chars_redo = []
+
+                # show results
+                for cur_label, group in ml.group_by_label(data_test, labels_test_pred):
+                    print(cur_label)
+                    group_prepped = [(prep_image(x), None) for x in group]
+                    group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
+                    chars_working, chars_done = charclass.label_chars(group_pred)
+                    chars_confirmed += chars_working
+                    chars_redo += chars_done
 
         util.save_dill(proc, model_filename)
-
-        if VISUALIZE:
-
-            # visualize ROC curve
-            from matplotlib import pyplot as plt
-
-            plt.figure()
-            plt.plot(
-                fpr, tpr, color="red",
-                lw=2, label="ROC curve (area = " + str(roc_auc) + ")")
-            plt.plot([0, 1], [0, 1], color="blue", lw=2, linestyle='--')
-            plt.xlim([0.0, 1.0])
-            plt.ylim([0.0, 1.05])
-            plt.xlabel("FPR")
-            plt.ylabel("TPR")
-            plt.title("ROC")
-            plt.legend(loc="lower right")
-            plt.show()
-
-            # visualize result images
-
-            # labels_test_pred = classify_char_pos(data_test)
-            chars_confirmed = []
-            chars_redo = []
-
-            # show results
-            for cur_label, group in ml.group_by_label(data_test, labels_test_pred):
-                print(cur_label)
-                group_prepped = [(prep_image(x), None) for x in group]
-                group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
-                chars_working, chars_done = charclass.label_chars(group_pred)
-                chars_confirmed += chars_working
-                chars_redo += chars_done
 
     if mode == "tune":
 

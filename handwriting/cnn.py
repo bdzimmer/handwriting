@@ -21,25 +21,52 @@ from torch.utils.data import Dataset, DataLoader
 class ExperimentalCNN(nn.Module):
     """Convnet implemented with PyTorch."""
 
-    def __init__(self, n_classes):
+    def __init__(self, input_shape, n_classes):
         """init function"""
         super().__init__()
 
-        # TODO: calculate these sizes programmatically
-        # input is a 96 * 96 grayscale image
+        conv0_input_height, conv0_input_width = input_shape
+
+        conv0_kernel_hwidth = 2
+        conv1_kernel_hwidth = 2
+
+        conv0_output_channels = 4
+        conv1_output_channels = 8
+
+        linear_size = 256
+
         # conv2d args are in channels, out channels, kernel size
-        self.conv0 = nn.Conv2d(1, 4, 5)
+        self.conv0 = nn.Conv2d(
+            1,
+            conv0_output_channels,
+            conv0_kernel_hwidth * 2 + 1)
+
+        conv0_output_height = conv0_input_height - 2 * conv0_kernel_hwidth
+        conv0_output_width = conv0_input_width - 2 * conv0_kernel_hwidth
+
         # max pool
-        self.conv1 = nn.Conv2d(4, 8, 5)
+        conv1_input_height = conv0_output_height // 2
+        conv1_input_width = conv0_output_width // 2
+
+        self.conv1 = nn.Conv2d(
+            conv0_output_channels,
+            conv1_output_channels,
+            conv1_kernel_hwidth * 2 + 1)
+
+        conv1_output_height = conv1_input_height - 2 * conv1_kernel_hwidth
+        conv1_output_width = conv1_input_width - 2 * conv1_kernel_hwidth
+
         # max pool
-        self.fc0 = nn.Linear(3528, 256)
-        self.fc1 = nn.Linear(256, n_classes)
+        self.fc0_input_size = (conv1_output_height // 2) * (conv1_output_width // 2) * conv1_output_channels
+
+        self.fc0 = nn.Linear(self.fc0_input_size, linear_size)
+        self.fc1 = nn.Linear(linear_size, n_classes)
 
     def forward(self, x):
         """feed forward"""
         x = F.max_pool2d(F.relu(self.conv0(x)), 2)
         x = F.max_pool2d(F.relu(self.conv1(x)), 2)
-        x = x.view(-1, 3528)
+        x = x.view(-1, self.fc0_input_size)
         x = F.relu(self.fc0(x))
         x = F.relu(self.fc1(x))
         return x
@@ -75,7 +102,12 @@ def experimental_cnn(
         n_classes = len(unique_labels)
         n_samples = len(feats_train)
 
-        net = ExperimentalCNN(n_classes)
+        # assumes that all images are the same size and that at least
+        # one training sample is passed in
+        input_shape = feats_train[0].shape
+
+        net = ExperimentalCNN(input_shape, n_classes)
+
         # in the example, learning rate was 0.001 and momentum was 0.9
         optimizer = optim.SGD(
             net.parameters(), lr=learning_rate, momentum=momentum)
@@ -195,7 +227,6 @@ def experimental_cnn(
 
 def grad_magnitude(model):
     """calculate the magnitude of the current gradient of a model"""
-
     # use to check for vanishing / exploding gradient
 
     res = 0.0
