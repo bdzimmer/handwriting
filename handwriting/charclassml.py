@@ -29,7 +29,7 @@ def build_current_best_process(
         # return 255.0 - improc.grayscale(improc.align(pad_image_96(image)))
 
 
-    if False:
+    if True:
 
         def feat_extractor(image):
             """convert image to feature vector"""
@@ -111,7 +111,7 @@ def build_current_best_process(
             """convert image to feature vector"""
             img_p = prep_image(image)
             img_g = img_p / 255.0
-            return img_g
+            return np.array(img_g, np.float32)
 
         feats_train = [feat_extractor(x) for x in data_train]
         feat_selector = lambda x: x

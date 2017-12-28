@@ -85,12 +85,56 @@ class ImagesDataset(Dataset):
         return self.data[idx]
 
 
+class CallableTorchModel(object):
+    """Wrapper for torch models to make them callable."""
+
+    def __init__(self, model, unique_labels):
+        """init method"""
+        self.model = model
+        self.unique_labels = unique_labels
+
+    def __call__(self, feats):
+        """model becomes callable"""
+        # not sure that this generalizes, but will use it for now
+        res = []
+        for img in feats:
+            # img = np.array(img, dtype=np.float32)
+            img = Variable(
+                torch.from_numpy(img[None, None, :, :]), requires_grad=True)
+            output = self.model(img)
+            _, label_idx = torch.max(output.data, 1)
+            res.append(self.unique_labels[label_idx[0]])
+        return res
+
+    def predict_proba(self, feats):
+        """helper"""
+        # TODO: probably name this something else
+        # I would rather achieve dynamic dispatch via polymorphic wrapper
+        # functions rather than methods on classes
+
+        res = []
+        for img in feats:
+            # img = np.array(img, dtype=np.float32)
+            img = Variable(
+                torch.from_numpy(img[None, None, :, :]), requires_grad=True)
+            output = self.model(img)
+            proba = nn.Softmax(dim=1)(output).data
+            # print("labels:", self.unique_labels)
+            # print("output:", output)
+            # print("proba:", proba)
+            res.append(proba)
+        return res
+
+
 def experimental_cnn(
         batch_size,
         max_epochs,
         learning_rate,
         momentum,
-        log_filename=None):
+        epoch_log_filename,
+        callback_log_filename,
+        callback,
+        callback_rate):
 
     """Build a function that fits a CNN."""
 
@@ -113,7 +157,16 @@ def experimental_cnn(
             net.parameters(), lr=learning_rate, momentum=momentum)
         loss_func = nn.CrossEntropyLoss()
 
-        log_file = open(log_filename, "w") if log_filename is not None else None
+        epoch_log_file = (
+            open(epoch_log_filename, "w")
+            if epoch_log_filename is not None
+            else None)
+
+        callbacks_log_file = (
+            open(callback_log_filename, "w")
+            if callback_log_filename is not None
+            else None)
+
         start_time = time.time()
 
         for epoch in range(max_epochs):
@@ -122,6 +175,8 @@ def experimental_cnn(
             epoch_grad_magnitude = 0.0
 
             if batch_size == 0:
+
+                # TODO: get rid of this
 
                 idxs_shuffled = np.random.permutation(n_samples)
                 for idx, idx_shuffled in enumerate(idxs_shuffled):
@@ -200,27 +255,34 @@ def experimental_cnn(
                     time.localtime(start_time + total_time_est)),
                 "(" + str(np.round(total_time_est, 2)) + " sec)")
 
-            if log_file is not None:
-                print(", ".join(
-                    [str(x) for x in [
-                        epoch,
-                        mean_loss,
-                        mean_grad_magnitude,
-                        running_time]]),
-                    file=log_file, flush=True)
+            if epoch_log_file is not None:
+                print(
+                    ", ".join(
+                        [str(x) for x in [
+                            epoch,
+                            mean_loss,
+                            mean_grad_magnitude,
+                            running_time]]),
+                    file=epoch_log_file,
+                    flush=True)
 
-        def predict(feats_test):
-            """make predictions using the fitted model"""
-            res = []
-            for img in feats_test:
-                img = np.array(img, dtype=np.float32)
-                img = Variable(torch.from_numpy(img[None, None, :, :]), requires_grad=True)
-                output = net(img)
-                _, label_idx = torch.max(output.data, 1)
-                res.append(unique_labels[label_idx[0]])
-            return res
+            if callbacks_log_file is not None and epoch % callback_rate == 0:
+                model = CallableTorchModel(net, unique_labels)
+                callback_results = callback(model)
+                print(
+                    ", ".join(
+                        [str(x) for x in (
+                            [epoch] + callback_results)]),
+                    file=callbacks_log_file,
+                    flush=True)
 
-        return predict
+        if epoch_log_file is not None:
+            epoch_log_file.close()
+
+        if callbacks_log_file is not None:
+            callbacks_log_file.close()
+
+        return CallableTorchModel(net, unique_labels)
 
     return fit
 

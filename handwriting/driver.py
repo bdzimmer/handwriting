@@ -13,7 +13,7 @@ import cv2
 from handwriting import findlines, findwords, findletters, extract, util
 from handwriting import analysisimage, improc
 from handwriting.prediction import Sample
-
+from handwriting.cnn import ExperimentalCNN
 
 VISUALIZE = True
 
@@ -48,15 +48,23 @@ def current_best_process():
     half_width = 8
 
     def classify_charpos_prob(im):
+        # classifier = classify_charpos[0]
         feat_extractor = classify_charpos[2]
         feat_selector = classify_charpos[3]
-        model = classify_charpos[5]
+        model = classify_charpos[4]
+
+        # res = model.model.predict_proba(
+        #     feat_selector([feat_extractor(y) for y in im]))[:, 1]
+
         res = model.predict_proba(
-            feat_selector([feat_extractor(y) for y in im]))[:, 1]
+            feat_selector([feat_extractor(y) for y in im]))
+        # probabilities are False, True in 1x2 tensor
+        # so [0, 1] is the True probability
+        res = [x[0, 1] for x in res]
         return res
 
     find_classify_prob = lambda x: findletters.find_classify_prob(
-            x, half_width, extract_char, classify_charpos_prob, 0.9) # 0.2
+            x, half_width, extract_char, classify_charpos_prob, 0.5) # 0.2
 
     classify_char = lambda x: classify_characters[0]([x])[0]
 

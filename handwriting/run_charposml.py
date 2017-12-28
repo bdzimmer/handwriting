@@ -24,11 +24,14 @@ from handwriting.prediction import Sample
 VISUALIZE = False
 
 
-def build_classification_process(data_train, labels_train):
+def build_classification_process(
+        data_train,
+        labels_train,
+        pad_width,
+        prepare_callback=None):
 
     """build a classification process"""
 
-    pad_width = 16
     start_row = 32
 
     pad_image = partial(improc.pad_image, width=pad_width, height=96)
@@ -36,9 +39,9 @@ def build_classification_process(data_train, labels_train):
     def prep_image(image):
         """prepare an image (result is still a 2d image)"""
         image = image[start_row:, :]
-        return 255.0 - improc.grayscale(
-            improc.align(pad_image(image), x_align=False))
-        # return 255.0 - improc.grayscale(pad_image(image))
+        # return 255.0 - improc.grayscale(
+        #     improc.align(pad_image(image), x_align=False))
+        return 255.0 - improc.grayscale(pad_image(image))
 
     if False:
 
@@ -100,18 +103,35 @@ def build_classification_process(data_train, labels_train):
             """convert image to feature vector"""
             img_p = prep_image(image)
             img_g = img_p / 255.0
-            return img_g
+            return np.array(img_g, np.float32) # Torch wants float32
 
         feats_train = [feat_extractor(x) for x in data_train]
         feat_selector = lambda x: x
         feats_train = feat_selector(feats_train)
 
+        callbacks_log_filename = (
+            "log_charpos_callback.txt"
+            if prepare_callback is not None
+            else None)
+
+        # prepare the callback...this is a little awkward
+        # I think the solution is probably to return all of the pieces
+        # along with a function which trains the classifier given callbacks
+        # or something like that
+
+        print("preparing callback...", end="", flush=True)
+        callbacks = prepare_callback(feat_extractor, feat_selector)
+        print("done")
+
         classifier = cnn.experimental_cnn(
             batch_size=16, # 8
-            max_epochs=2048,
+            max_epochs=256,  # 512,
             learning_rate=0.001,
             momentum=0.9,
-            log_filename="log_test.txt"
+            epoch_log_filename="log_charpos.txt",
+            callback_log_filename=callbacks_log_filename,
+            callback=callbacks,
+            callback_rate=8
         )(
             feats_train,
             labels_train
@@ -123,6 +143,54 @@ def build_classification_process(data_train, labels_train):
     return (classify_char_image,
             prep_image, feat_extractor, feat_selector,
             classifier)
+
+
+def build_distance_test(word_ims_test):
+    """create a distance test function to measure jaccard distance
+    for various methods"""
+
+    def distance_test(find_char_poss_func, visualize=False):
+        """helper"""
+        jaccard_distance = lambda x, y: 1.0 - findletters.jaccard_index(x, y)
+        distances = []
+        for word_im in word_ims_test:
+            positions_true = [x.data for x in word_im.result]
+            positions_test = find_char_poss_func(word_im.data)
+            cur_distances, idxs = findletters.position_list_distance(
+                positions_true, positions_test,
+                jaccard_distance)
+
+            if visualize:
+                for idx_true, idx_test in enumerate(idxs):
+                    pos_true = positions_true[idx_true]
+                    pos_test = positions_test[idx_test]
+                    disp_im = 255 - np.copy(word_im.data)
+
+                    disp_im[:, pos_true[0]:pos_true[1], 0] = 255
+                    disp_im[:, pos_true[0]] = (255, 0, 0)
+                    disp_im[:, pos_true[1]] = (255, 0, 0)
+
+                    disp_im[:, pos_test[0]:pos_test[1], 2] = 255
+                    disp_im[:, pos_test[0]] = (0, 0, 255)
+                    disp_im[:, pos_test[1]] = (0, 0, 255)
+
+                    cv2.namedWindow("positions", cv2.WINDOW_NORMAL)
+                    cv2.imshow("positions", disp_im)
+                    print(
+                        pos_true, pos_test,
+                        cur_distances[idx_true],
+                        1.0 - cur_distances[idx_true])
+                    cv2.waitKey()
+
+            distances.append(cur_distances)
+            print(".", end="", flush=True)
+
+        # TODO: should I be aggregating this differently?
+        # mean overlap - higher is better
+        res = np.mean([1.0 - y for x in distances for y in x])
+        return res
+
+    return distance_test
 
 
 def _load_words(filenames):
@@ -274,11 +342,11 @@ def main(argv):
     random.seed(0)
 
     model_filename = "models/classify_charpos.pkl"
-    half_width = 8
+    half_width = 16
     offset = 0
-    balance_factor = 64
+    balance_factor = 128 # 128 produced the very best results
 
-    train_filenames, test_filenames = data.train_test_pages([5, 6])
+    train_filenames, test_filenames = data.train_test_pages([5, 6]) # 5, 6
 
     print("training files:", train_filenames)
     print("test files:", test_filenames)
@@ -347,12 +415,58 @@ def main(argv):
         [(x[0], len(x[1]))
          for x in ml.group_by_label(data_test, labels_test)])
 
+    # extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
+    extract_char = improc.extract_pos
+
     if mode == "train":
 
         print("training model...")
 
+        word_ims_test = _load_words(test_filenames)
+        distance_test = build_distance_test(word_ims_test)
+
+        def prepare_callback(feat_extractor, feat_selector):
+            """given feature extractor and feature selector functions,
+            build callbacks to test the network during training"""
+            feats_test = feat_selector([feat_extractor(x) for x in data_test])
+
+            def callback(model):
+                """helper"""
+                print("predicting...", end="", flush=True)
+                probs_true_pred = [x[0, 1] for x in model.predict_proba(feats_test)]
+                labels_test_pred = [x > 0.5 for x in probs_true_pred]
+                print("done")
+
+                # TODO: something generic here instead of sklearn stuff
+                accuracy = sklearn.metrics.accuracy_score(
+                    labels_test, labels_test_pred)
+                fpr, tpr, _ = sklearn.metrics.roc_curve(
+                    labels_test, probs_true_pred)
+                roc_auc = sklearn.metrics.auc(fpr, tpr)
+
+                def classify_ml(img):
+                    """helper"""
+                    res = model.predict_proba(
+                        feat_selector([feat_extractor(y) for y in img]))
+                    # probabilities are False, True in 1x2 tensor
+                    # so [0, 1] is the True probability
+                    res = [x[0, 1] for x in res]
+                    return res
+
+                thresh = 0.5
+                find_classify = lambda word_im: findletters.find_classify_prob(
+                    word_im, half_width, extract_char, classify_ml, thresh)
+                distance = distance_test(find_classify, False)
+
+                return [accuracy, roc_auc, distance]
+
+            return callback
+
         proc = build_classification_process(
-            data_train, labels_train)
+            data_train,
+            labels_train,
+            pad_width=half_width * 2,
+            prepare_callback=prepare_callback)
 
         (classify_char_pos,
          prep_image, feat_extractor, feat_selector,
@@ -419,52 +533,11 @@ def main(argv):
         # test different position finding methods using a distance function
         # on each word
 
-        # extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
-        extract_char = improc.extract_pos
-
         print("loading test words...", end="", flush=True)
         word_ims_test = _load_words(test_filenames)
         print("done")
 
-        def distance_test(find_char_poss_func, visualize=False):
-            """helper"""
-            jaccard_distance = lambda x, y: 1.0 - findletters.jaccard_index(x, y)
-            distances = []
-            for word_im in word_ims_test:
-                positions_true = [x.data for x in word_im.result]
-                positions_test = find_char_poss_func(word_im.data)
-                cur_distances, idxs = findletters.position_list_distance(
-                    positions_true, positions_test,
-                    jaccard_distance)
-
-                if visualize:
-                    for idx_true, idx_test in enumerate(idxs):
-                        pos_true = positions_true[idx_true]
-                        pos_test = positions_test[idx_test]
-                        disp_im = 255 - np.copy(word_im.data)
-
-                        disp_im[:, pos_true[0]:pos_true[1], 0] = 255
-                        disp_im[:, pos_true[0]] = (255, 0, 0)
-                        disp_im[:, pos_true[1]] = (255, 0, 0)
-
-                        disp_im[:, pos_test[0]:pos_test[1], 2] = 255
-                        disp_im[:, pos_test[0]] = (0, 0, 255)
-                        disp_im[:, pos_test[1]] = (0, 0, 255)
-
-                        cv2.namedWindow("positions", cv2.WINDOW_NORMAL)
-                        cv2.imshow("positions", disp_im)
-                        print(
-                            pos_true, pos_test,
-                            cur_distances[idx_true],
-                            1.0 - cur_distances[idx_true])
-                        cv2.waitKey()
-
-                distances.append(cur_distances)
-
-            # TODO: should I be aggregating this differently?
-            # mean overlap - higher is better
-            res = np.mean([1.0 - y for x in distances for y in x])
-            return res
+        distance_test = build_distance_test(word_ims_test)
 
         def build_find_thresh_peaks(peak_sigma, mean_divisor):
             """helper"""
@@ -500,12 +573,23 @@ def main(argv):
         proc = util.load_dill(model_filename)
         (classify_char_pos,
          prep_image, feat_extractor, feat_selector,
-         classifier, model) = proc
+         classifier) = proc
+
+        # def classify_ml(img):
+        #     """helper"""
+        #     # select the column of true probabilities
+        #     # (column 1) from the result array
+        #     res = classifier.model.predict_proba(
+        #         feat_selector([feat_extractor(y) for y in img]))[:, 1]
+        #    return res
 
         def classify_ml(img):
             """helper"""
-            res = model.predict_proba(
-                feat_selector([feat_extractor(y) for y in img]))[:, 1]
+            res = classifier.predict_proba(
+                feat_selector([feat_extractor(y) for y in img]))
+            # probabilities are False, True in 1x2 tensor
+            # so [0, 1] is the True probability
+            res = [x[0, 1] for x in res]
             return res
 
         thresh = 0.8
