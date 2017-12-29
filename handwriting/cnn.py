@@ -256,12 +256,21 @@ def experimental_cnn(
                 "(" + str(np.round(total_time_est, 2)) + " sec)")
 
             if epoch_log_file is not None:
+                model = CallableTorchModel(net, unique_labels)
+
+                labels_train_pred = model(feats_train)
+                # TODO: something generic here instead of sklearn
+                import sklearn
+                accuracy = sklearn.metrics.accuracy_score(
+                    labels_train, labels_train_pred)
+
                 print(
                     ", ".join(
                         [str(x) for x in [
                             epoch,
                             mean_loss,
                             mean_grad_magnitude,
+                            accuracy,
                             running_time]]),
                     file=epoch_log_file,
                     flush=True)

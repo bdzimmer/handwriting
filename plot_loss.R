@@ -30,8 +30,11 @@ plotGeneric <- function(d) {
     curData <- d[[idx]]
     curDataName <- colnames(d)[idx]
     plot(
-      curData ~ d$epoch, type = "l", lwd = 2, col = "green",
-      xlab = "epoch", ylab = curDataName)
+      curData ~ d$epoch, type = "l", lwd = 2, col = "darkgreen",
+      xlab = "epoch", ylab = curDataName,
+      ylim=c(0, max(1, curData)) # most of these are scores that lie between 0 and 1
+    )
+    abline(h=0:10 / 10, col = "lightgray")
     title(main = paste(
       curDataName,
       round(tail(curData, 1), 6)))
@@ -44,13 +47,17 @@ while(TRUE) {
     
     par(mfcol=c(3, 2))
     
+    # d <- read.csv(lossInputFilename, header = FALSE)
+    # colnames(d) <- c("epoch", "loss", "grad", "train_accuracy", "time")
+    # plotLoss(d)
+    # plot(0, type="n", xlab=NA, ylab=NA)
+    
     d <- read.csv(lossInputFilename, header = FALSE)
-    colnames(d) <- c("epoch", "loss", "grad", "time")
-    plotLoss(d)
-    plot(0, type="n")
+    colnames(d) <- c("epoch", "loss", "grad", "train_accuracy", "time")
+    plotGeneric(d[, -5])
     
     d <- read.csv(callbackInputFilename, header = FALSE)
-    colnames(d) <- c("epoch", "accuracy", "roc_auc", "distance")
+    colnames(d) <- c("epoch", "val_distance",  "val_roc_auc", "val_accuracy")
     plotGeneric(d)
     
   },

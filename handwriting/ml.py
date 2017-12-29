@@ -313,6 +313,31 @@ def group_by_label(samples, labels):
     return [res_unsorted[idx] for idx in order]
 
 
+def prepare_balance(samples, labels, balance_factor):
+    """prepare a dataset for balancing given a balance factor"""
+
+    # reduce the size of oversized groups, but don't replicate / adjust
+
+    grouped = group_by_label(samples, labels)
+
+    if balance_factor <= 1.0:
+        largest_group_size = max([len(x[1]) for x in grouped])
+        target_group_size = int(largest_group_size * balance_factor)
+    else:
+        target_group_size = int(balance_factor)
+
+    grouped_balanced = []
+    for label, group in grouped:
+        if len(group) > target_group_size:
+            group_resized = random.sample(group, target_group_size)
+        else:
+            group_resized = [x for x in group]
+        grouped_balanced.append((label, group_resized))
+
+    pairs = [(y, x[0]) for x in grouped_balanced for y in x[1]]
+    return zip(*pairs)
+
+
 def balance(samples, labels, balance_factor, adjust_func):
     """create a balanced dataset by subsampling classes or generating new
     samples"""
@@ -329,10 +354,10 @@ def balance(samples, labels, balance_factor, adjust_func):
     for label, group in grouped:
 
         if len(group) > target_group_size:
-            print(label, 1.0)
+            # print(label, 1.0)
             group_resized = random.sample(group, target_group_size)
         else:
-            print(label, (len(group) * 1.0) / target_group_size)
+            # print(label, (len(group) * 1.0) / target_group_size)
             group_resized = [x for x in group]
             while len(group_resized) < target_group_size:
                 group_resized.append(adjust_func(random.choice(group)))
