@@ -52,13 +52,13 @@ while(TRUE) {
     # plotLoss(d)
     # plot(0, type="n", xlab=NA, ylab=NA)
     
-    d <- read.csv(lossInputFilename, header = FALSE)
-    colnames(d) <- c("epoch", "loss", "grad", "train_accuracy", "time")
-    plotGeneric(d[, -5])
+    dl <- read.csv(lossInputFilename, header = FALSE)
+    colnames(dl) <- c("epoch", "loss", "grad", "train_accuracy", "time")
+    plotGeneric(dl[, -5])
     
-    d <- read.csv(callbackInputFilename, header = FALSE)
-    colnames(d) <- c("epoch", "val_distance",  "val_roc_auc", "val_accuracy")
-    plotGeneric(d)
+    dv <- read.csv(callbackInputFilename, header = FALSE)
+    colnames(dv) <- c("epoch", "val_distance",  "val_roc_auc", "val_accuracy")
+    plotGeneric(dv)
     
   },
   error = function(e) {

@@ -48,9 +48,9 @@ def transform_random(image, trans_size, rot_size, scale_size):
     """apply a small random transformation to an image"""
 
     # TODO: make ranges of random numbers input parameters
-    trans = np.random.rand(2) * trans_size - 0.5 * trans_size
-    rot = np.random.rand(4) * rot_size - 0.5 * rot_size
-    scale = 1.0 + np.random.rand(1)[0] * scale_size - 0.5 * scale_size
+    trans = (np.random.rand(2) - 0.5) * np.array(trans_size)
+    rot = (np.random.rand(4) - 0.5) * rot_size
+    scale = 1.0 + scale_size * (np.random.rand(1)[0] - 0.5)
 
     x_size = image.shape[1]
     y_size = image.shape[0]

@@ -9,7 +9,7 @@ Find positions of characters in images of words or a single word.
 # TODO: rename to "findcharacters.py"
 
 
-import cv2
+# import cv2
 
 import numpy as np
 
@@ -77,7 +77,7 @@ def find_classify_prob(
 
     char_poss = []
     run = []
-    for x in range(2, word_im.shape[1] - 2, 1): # step 2
+    for x in range(2, word_im.shape[1] - 2, 1):
         test_range = (x - half_width, x + half_width)
         test_im = extract_char(test_range, word_im)
         # disp_im = np.copy(word_im)
@@ -92,7 +92,8 @@ def find_classify_prob(
             run.append((x, prob))
         else:
             if len(run) > 1:
-                char_poss.append(run[np.argmax([y[1] for y in run])][0])
+                pos = run[np.argmax([y[1] for y in run])][0]
+                char_poss.append(pos)
                 run = []
     if len(run) > 1:
         char_poss.append(run[np.argmax([y[1] for y in run])][0])

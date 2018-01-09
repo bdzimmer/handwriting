@@ -85,6 +85,21 @@ class ImagesDataset(Dataset):
         return self.data[idx]
 
 
+class ImagesDatasetLazy(Dataset):
+    """Images dataset."""
+
+    def __init__(self, images, labels, extractor):
+        self.data = list(zip(images, labels))
+        self.extractor = extractor
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        img, label = self.data[idx]
+        return self.extractor(img), label
+
+
 class CallableTorchModel(object):
     """Wrapper for torch models to make them callable."""
 
@@ -99,9 +114,9 @@ class CallableTorchModel(object):
         res = []
         for img in feats:
             # img = np.array(img, dtype=np.float32)
-            img = Variable(
+            img_var = Variable(
                 torch.from_numpy(img[None, None, :, :]), requires_grad=True)
-            output = self.model(img)
+            output = self.model(img_var)
             _, label_idx = torch.max(output.data, 1)
             res.append(self.unique_labels[label_idx[0]])
         return res
@@ -134,7 +149,8 @@ def experimental_cnn(
         epoch_log_filename,
         callback_log_filename,
         callback,
-        callback_rate):
+        callback_rate,
+        lazy_extractor):
 
     """Build a function that fits a CNN."""
 
@@ -144,7 +160,7 @@ def experimental_cnn(
         unique_labels = sorted(list(set(labels_train)))
         label_map = {k: v for v, k in enumerate(unique_labels)}
         n_classes = len(unique_labels)
-        n_samples = len(feats_train)
+        # n_samples = len(feats_train)
 
         # assumes that all images are the same size and that at least
         # one training sample is passed in
@@ -169,75 +185,51 @@ def experimental_cnn(
 
         start_time = time.time()
 
+        if lazy_extractor is None:
+            dataloader = DataLoader(
+                ImagesDataset(feats_train, labels_train),
+                batch_size=batch_size,
+                shuffle=True)
+        else:
+            dataloader = DataLoader(
+                ImagesDatasetLazy(feats_train, labels_train, lazy_extractor),
+                batch_size=batch_size,
+                shuffle=True)
+
         for epoch in range(max_epochs):
 
             epoch_loss = 0.0
             epoch_grad_magnitude = 0.0
 
-            if batch_size == 0:
+            for idx, (images, labels) in enumerate(dataloader):
+                ims = Variable(
+                    torch.from_numpy(np.array(
+                        [np.array(image[None, :, :], dtype=np.float32)
+                         for image in images])),
+                    requires_grad=True)
+                targets = Variable(
+                    torch.LongTensor(
+                        [label_map[label] for label in labels]))
+                # zero the gradient buffers
+                optimizer.zero_grad()
+                # feedforward
+                output = net(ims)
+                loss = loss_func(output, targets)
+                # backpropagate
+                loss.backward()
+                optimizer.step()
 
-                # TODO: get rid of this
+                epoch_loss += loss.data[0]
+                epoch_grad_magnitude += grad_magnitude(net)
 
-                idxs_shuffled = np.random.permutation(n_samples)
-                for idx, idx_shuffled in enumerate(idxs_shuffled):
-                    img = np.array(feats_train[idx_shuffled], dtype=np.float32)
-                    img = Variable(torch.from_numpy(img[None, None, :, :]), requires_grad=True)
-                    label = labels_train[idx_shuffled]
-                    target = Variable(torch.LongTensor([label_map[label]]))
-                    # zero the gradient buffers
-                    optimizer.zero_grad()
-                    # feedforward
-                    output = net(img)
-                    loss = loss_func(output, target)
-                    # backpropagate
-                    loss.backward()
-                    optimizer.step()
+                if idx % 25 == 0:
+                    # minibatch losses are averaged rather than summed
+                    print(
+                        idx * batch_size,
+                        np.round(epoch_loss / (idx + 1), 6))
 
-                    epoch_loss += loss.data[0]
-                    epoch_grad_magnitude += grad_magnitude(optimizer)
-
-                    if idx % 100 == 0:
-                        print(idx, np.round(epoch_loss / (idx + 1), 6))
-
-                mean_loss = epoch_loss / n_samples
-                mean_grad_magnitude = epoch_grad_magnitude / n_samples
-
-            else:
-
-                dataloader = DataLoader(
-                    ImagesDataset(feats_train, labels_train),
-                    batch_size=batch_size,
-                    shuffle=True)
-
-                for idx, (images, labels) in enumerate(dataloader):
-                    ims = Variable(
-                        torch.from_numpy(np.array(
-                            [np.array(image[None, :, :], dtype=np.float32)
-                             for image in images])),
-                        requires_grad=True)
-                    targets = Variable(
-                        torch.LongTensor(
-                            [label_map[label] for label in labels]))
-                    # zero the gradient buffers
-                    optimizer.zero_grad()
-                    # feedforward
-                    output = net(ims)
-                    loss = loss_func(output, targets)
-                    # backpropagate
-                    loss.backward()
-                    optimizer.step()
-
-                    epoch_loss += loss.data[0]
-                    epoch_grad_magnitude += grad_magnitude(net)
-
-                    if idx % 25 == 0:
-                        # minibatch losses are averaged rather than summed
-                        print(
-                            idx * batch_size,
-                            np.round(epoch_loss / (idx + 1), 6))
-
-                mean_loss = epoch_loss / (idx + 1)
-                mean_grad_magnitude = epoch_grad_magnitude / (idx + 1)
+            mean_loss = epoch_loss / (idx + 1)
+            mean_grad_magnitude = epoch_grad_magnitude / (idx + 1)
 
             running_time = time.time() - start_time
             print(
@@ -249,16 +241,20 @@ def experimental_cnn(
             frac_complete = (epoch + 1.0) / max_epochs
             total_time_est = running_time / frac_complete
             print(
-                "Estimated completion time:",
+                "ETA:",
                 time.strftime(
                     '%Y-%m-%d %H:%M:%S',
                     time.localtime(start_time + total_time_est)),
-                "(" + str(np.round(total_time_est, 2)) + " sec)")
+                "(" +  str(np.round((1.0 - frac_complete) * total_time_est / 60, 2)) + " min remaining; " +
+                str(np.round(total_time_est / 60, 2)) + " min total)")
 
             if epoch_log_file is not None:
                 model = CallableTorchModel(net, unique_labels)
 
-                labels_train_pred = model(feats_train)
+                if lazy_extractor is None:
+                    labels_train_pred = model(feats_train)
+                else:
+                    labels_train_pred = [model([lazy_extractor(x)])[0] for x in feats_train]
                 # TODO: something generic here instead of sklearn
                 import sklearn
                 accuracy = sklearn.metrics.accuracy_score(
@@ -275,7 +271,7 @@ def experimental_cnn(
                     file=epoch_log_file,
                     flush=True)
 
-            if callbacks_log_file is not None and epoch % callback_rate == 0:
+            if callbacks_log_file is not None and (epoch + 1) % callback_rate == 0:
                 model = CallableTorchModel(net, unique_labels)
                 callback_results = callback(model)
                 print(

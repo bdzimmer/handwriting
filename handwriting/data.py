@@ -9,11 +9,11 @@ Manage training and test pages.
 
 
 SAMPLE_FILENAMES = (
-    ["data/20170929_" + str(idx) + ".png.sample.pkl.1"
+    ["data/20170929_" + str(idx) + ".png.sample.pkl.1" # 0-4
      for idx in range(1, 6)] +
-    ["data/20171120_" + str(idx) + ".png.sample.pkl.1"
+    ["data/20171120_" + str(idx) + ".png.sample.pkl.1" # 5-8
      for idx in range(1, 5)] +
-    ["data/20171209_" + str(idx) + ".png.sample.pkl.1"
+    ["data/20171209_" + str(idx) + ".png.sample.pkl.1" # 9-12
      for idx in range(1, 5)])
 
 
