@@ -164,7 +164,9 @@ def build_classification_process(
 
             lazy_extractor = grayuint_to_grayfloat
 
-        print("training features (input to CNN) size:", mbs(feats_train), "MiB")
+        print(
+            "training features (input to CNN) size:",
+            util.mbs(feats_train), "MiB")
 
         callbacks_log_filename = (
             "log_charpos_callback.txt"
@@ -240,7 +242,6 @@ def _visualize_position_predictions_stacked(
 
     disp_im[0:im_height] = 255 - word_im
     disp_im[im_height:double_height] = 255 - word_im
-
 
     for pos_true in positions_true:
         # disp_im[0:im_height, pos_true[0]:pos_true[1], 1] = 255
@@ -507,14 +508,6 @@ def _load_samples(filenames, half_width, offset):
     return images, combined_labels
 
 
-def mbs(arrays):
-    """find the approximate size of a list of numpy arrays in MiB"""
-    total = 0.0
-    for array in arrays:
-        total += array.nbytes / 1048576.0
-    return np.round(total, 3)
-
-
 def main(argv):
     """main program"""
 
@@ -558,7 +551,9 @@ def main(argv):
     # print("training data shapes:", sorted(list(set([x.shape for x in data_train_unbalanced]))))
     # print("training data length:", len(data_train_unbalanced))
 
-    print("unbalanced training data size:", mbs(data_train_unbalanced), "MiB")
+    print(
+        "unbalanced training data size:",
+        util.mbs(data_train_unbalanced), "MiB")
 
     if VERBOSE:
         print(
@@ -573,11 +568,12 @@ def main(argv):
             data_train_unbalanced, labels_train_unbalanced, balance_factor)
         gc.collect()
 
-    print("prepared training data size:", mbs(data_train_unbalanced), "MiB")
+    print(
+        "prepared training data size:",
+        util.mbs(data_train_unbalanced), "MiB")
     print()
 
     if do_balance:
-
         # balance classes in training set
         data_train, labels_train = ml.balance(
             data_train_unbalanced, labels_train_unbalanced,
@@ -590,13 +586,11 @@ def main(argv):
             #     scale_size=0.25  # 0.1
             # )
         )
-
     else:
-
         data_train = data_train_unbalanced
         labels_train = labels_train_unbalanced
 
-    print("training data size:", mbs(data_train), "MiB")
+    print("training data size:", util.mbs(data_train), "MiB")
 
     # load test set
     data_test, labels_test = _load_samples(test_filenames, half_width, offset)
@@ -608,7 +602,7 @@ def main(argv):
     data_test, labels_test = zip(*[
         (y, x[0]) for x in test_grf.items() for y in x[1]])
 
-    print("test data size:    ", mbs(data_test), "MiB")
+    print("test data size:    ", util.mbs(data_test), "MiB")
 
     print("training count:    ", len(data_train))
     print("test count:        ", len(data_test))
@@ -661,7 +655,7 @@ def main(argv):
             build callbacks to test the network during training"""
             feats_test = feat_selector([feat_extractor(x) for x in data_test])
 
-            print("validation features size:", mbs(feats_test), "MiB")
+            print("validation features size:", util.mbs(feats_test), "MiB")
 
             def callback(model):
                 """helper"""

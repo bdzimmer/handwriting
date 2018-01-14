@@ -7,6 +7,7 @@ Machine learning for character classification.
 # Copyright (c) 2017 Ben Zimmer. All rights reserved.
 
 from functools import partial
+import gc
 
 import numpy as np
 
@@ -15,7 +16,8 @@ from handwriting import ml, improc, cnn
 VISUALIZE = False
 
 def build_current_best_process(
-        data_train, labels_train):
+        data_train, labels_train,
+        prepare_callback=None):
 
     """build the current best character classification process"""
 
@@ -28,8 +30,7 @@ def build_current_best_process(
         return 255.0 - improc.grayscale(improc.align(improc.filter_cc(pad_image_96(image))))
         # return 255.0 - improc.grayscale(improc.align(pad_image_96(image)))
 
-
-    if True:
+    if False:
 
         def feat_extractor(image):
             """convert image to feature vector"""
@@ -82,51 +83,144 @@ def build_current_best_process(
 
         print("--training classifier")
 
-        # classifier, classifier_score = ml.train_classifier(
-        #     # build_fit_model=ml.svc,
-        #     build_fit_model=ml.linear_svc,
-        #     score_func=ml.score_accuracy,
-        #     n_splits=5,
-        #     feats=feats_train,
-        #     labels=labels_train,
-        #     c=np.logspace(-2, 0, 10),
-        #     # gamma=np.logspace(-5, 1, 8),
-        #     # c=np.logspace(-2, 2, 7)
-        # )
-
         classifier = ml.train_classifier(
-            build_fit_model=ml.nn_classifier,
+            # build_fit_model=ml.svc,
+            build_fit_model=ml.linear_svc,
             score_func=ml.score_accuracy,
-            cross_validation=ml.kfold_cross_validation(5), # ml.holdout_validation(0.2),
+            cross_validation=ml.kfold_cross_validation(5),
             feats=feats_train,
             labels=labels_train,
-            hidden_layer_sizes=[(256, 128), (256, 64), (256, 32)],
-            # alpha=[0.0001, 0.001, 0.01],
-            alpha=[0.0001]
+            c=np.logspace(-2, 0, 10),
+            # gamma=np.logspace(-5, 1, 8),
+            # c=np.logspace(-2, 2, 7)
         )
+
+        # classifier = ml.train_classifier(
+        #     build_fit_model=ml.nn_classifier,
+        #     score_func=ml.score_accuracy,
+        #     cross_validation=ml.kfold_cross_validation(5), # ml.holdout_validation(0.2),
+        #     feats=feats_train,
+        #     labels=labels_train,
+        #     hidden_layer_sizes=[(256, 128), (256, 64), (256, 32)],
+        #     # alpha=[0.0001, 0.001, 0.01],
+        #     alpha=[0.0001]
+        # )
 
     else:
 
-        def feat_extractor(image):
-            """convert image to feature vector"""
-            img_p = prep_image(image)
-            img_g = img_p / 255.0
-            return np.array(img_g, np.float32)
+        # training process for deep neural networks
 
-        feats_train = [feat_extractor(x) for x in data_train]
-        feat_selector = lambda x: x
-        feats_train = feat_selector(feats_train)
+        do_lazy_extraction = True
+
+        callbacks_log_filename = (
+            "log_charclass_callback.txt"
+            if prepare_callback is not None
+            else None)
+
+        if not do_lazy_extraction:
+
+            def feat_extractor(image):
+                """convert image to feature vector"""
+                img_p = prep_image(image)
+                img_g = img_p / 255.0 - 0.5
+                return np.array(img_g, np.float32) # Torch wants float32
+
+            feats_train = [feat_extractor(x) for x in data_train]
+            feat_selector = lambda x: x
+            feats_train = feat_selector(feats_train)
+
+            print("preparing callback...", end="", flush=True)
+            callback = prepare_callback(feat_extractor, feat_selector)
+            print("done")
+
+            lazy_extractor = None
+
+        else:
+            # trade memory for compute
+
+            def color_to_grayuint(image):
+                """prepare image to ubyte"""
+                image = image[start_row:, :]
+                return np.array(
+                    255.0 - improc.grayscale(pad_image_96(image)),
+                    dtype=np.uint8)
+
+            def grayuint_to_grayfloat(image):
+                """convert uint8 image to floating point"""
+                img_g = image / 255.0 - 0.5
+                return np.array(img_g, np.float32)
+
+            feat_extractor = lambda x: grayuint_to_grayfloat(color_to_grayuint(x))
+            feat_selector = lambda x: x
+
+            # this is very small
+            feats_train = [color_to_grayuint(x) for x in data_train]
+            del data_train
+            gc.collect()
+
+            print("preparing callback...", end="", flush=True)
+            callback = prepare_callback(
+                feat_extractor, feat_selector)
+            print("done")
+
+            lazy_extractor = grayuint_to_grayfloat
+
+        # print("training features (input to CNN) size:", util.mbs(feats_train), "MiB")
+
+        callbacks_log_filename = (
+            "log_charclass_callback.txt"
+            if prepare_callback is not None
+            else None)
+
+        # prepare the callback...this is a little awkward
+        # I think the solution is probably to return all of the pieces
+        # along with a function which trains the classifier given callbacks
+        # or something like that
 
         classifier = cnn.experimental_cnn(
-            batch_size=8,
+            batch_size=16, # 32 # 16, # 8
             max_epochs=64,
             learning_rate=0.001,
             momentum=0.9,
-            log_filename="log.txt"
+            epoch_log_filename="log_charclass.txt",
+            callback_log_filename=callbacks_log_filename,
+            callback=callback,
+            callback_rate=4,
+            lazy_extractor=lazy_extractor
         )(
             feats_train,
             labels_train
         )
+
+        classify_char_image = ml.classification_process(
+            feat_extractor, feat_selector, classifier)
+
+        return (classify_char_image,
+                prep_image, feat_extractor, feat_selector,
+                classifier)
+
+        if False:
+
+            def feat_extractor(image):
+                """convert image to feature vector"""
+                img_p = prep_image(image)
+                img_g = img_p / 255.0
+                return np.array(img_g, np.float32)
+
+            feats_train = [feat_extractor(x) for x in data_train]
+            feat_selector = lambda x: x
+            feats_train = feat_selector(feats_train)
+
+            classifier = cnn.experimental_cnn(
+                batch_size=8,
+                max_epochs=128,
+                learning_rate=0.001,
+                momentum=0.9,
+                log_filename="log.txt"
+            )(
+                feats_train,
+                labels_train
+            )
 
     classify_char_image = ml.classification_process(
         feat_extractor, feat_selector, classifier)

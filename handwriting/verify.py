@@ -270,7 +270,7 @@ def main(argv):
     """main program"""
 
     if len(argv) < 3:
-        print("Usage: verify_new input_file <line | multi | view>")
+        print("Usage: verify input_file <line | multi | view>")
         sys.exit()
 
     input_filename = argv[1]

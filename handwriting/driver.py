@@ -45,7 +45,7 @@ def current_best_process():
     classify_characters = util.load_dill("models/classify_characters.pkl")
     print("done")
 
-    half_width = 8
+    half_width = 16
 
     def classify_charpos_prob(im):
         # classifier = classify_charpos[0]
@@ -196,6 +196,7 @@ def main(argv):
         """helper"""
         return " ".join(["".join(x) for x in words])
     chars_remove = "`"
+    # TODO: remove punctuation from middle of words
     line_results = [join_words([[char_pos.result.result for char_pos in word_pos.result.result]
                                 for word_pos in line_pos.result.result])
                     for line_pos in image_sample.result]

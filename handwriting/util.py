@@ -101,3 +101,11 @@ def find_peak_idxs(data, data_range, bandwidth, visualize=False):
         plt.show(block=False)
 
     return peak_idxs, [density[idx] for idx in peak_idxs]
+
+
+def mbs(arrays):
+    """find the approximate size of a list of numpy arrays in MiB"""
+    total = 0.0
+    for array in arrays:
+        total += array.nbytes / 1048576.0
+    return np.round(total, 3)

@@ -8,6 +8,7 @@ Train a character classifier.
 # Copyright (c) 2017 Ben Zimmer. All rights reserved.
 
 from functools import partial
+import gc
 import random
 import sys
 
@@ -57,10 +58,16 @@ def main(argv):
     model_filename = "models/classify_characters.pkl"
     min_label_examples = 1
     # remove_labels = ["\"", "!", "/", "~"]
-    remove_labels = ["~", "_", ":", "*"]
-    balance_factor = 32 # 64 # 100
+    # remove_labels = ["~", "_", ":", "*"]
+    remove_labels = ["~"]
+    do_destructive_prepare_balance = True
+    do_balance = True
+    balance_factor = 1024 # 64 # 100
 
-    train_filenames, test_filenames = data.train_test_pages([5, 6])
+    # train_filenames, test_filenames = data.train_test_pages([5, 6])
+    train_filenames, test_filenames = data.pages([1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12], [8])
+    # train_filenames, test_filenames = data.pages([5, 6, 7, 9, 10, 11, 12], [8])
+
     print("loading and balancing datasets...")
 
     # load training set
@@ -86,16 +93,29 @@ def main(argv):
          for x in ml.group_by_label(
              data_train_unbalanced, labels_train_unbalanced)])
 
-    # balance classes in training set
-    data_train, labels_train = ml.balance(
-        data_train_unbalanced,
-        labels_train_unbalanced,
-        balance_factor,
-        partial(
-            improc.transform_random,
-            trans_size=2.0,
-            rot_size=0.3,
-            scale_size=0.1))
+    if do_destructive_prepare_balance:
+        print("destructively prepping training data for balancing")
+        data_train_unbalanced, labels_train_unbalanced = ml.prepare_balance(
+            data_train_unbalanced, labels_train_unbalanced, balance_factor)
+        gc.collect()
+
+    print("prepared training data size:", util.mbs(data_train_unbalanced), "MiB")
+    print()
+
+    if do_balance:
+        # balance classes in training set
+        data_train, labels_train = ml.balance(
+            data_train_unbalanced,
+            labels_train_unbalanced,
+            balance_factor,
+            partial(
+                improc.transform_random,
+                trans_size=2.0,
+                rot_size=0.3,
+                scale_size=0.1))
+    else:
+        data_train = data_train_unbalanced
+        labels_train = labels_train_unbalanced
 
     # load test set
     data_test, labels_test = _load_samples(test_filenames)
@@ -124,8 +144,37 @@ def main(argv):
 
         print("training model...")
 
+        def prepare_callback(feat_extractor, feat_selector):
+            """given feature extractor and feature selector functions,
+            build callbacks to test the network during training"""
+            feats_test = feat_selector([feat_extractor(x) for x in data_test])
+
+            print("validation features size:", util.mbs(feats_test), "MiB")
+
+            def callback(model):
+                """helper"""
+                print("predicting...", end="", flush=True)
+                labels_test_pred = [model([x])[0] for x in feats_test]
+                print("done")
+
+                # fpr, tpr, _ = sklearn.metrics.roc_curve(
+                #     labels_test, probs_true_pred)
+                # roc_auc = sklearn.metrics.auc(fpr, tpr)
+                # print("validation ROC AUC:", roc_auc)
+
+                # TODO: something generic here instead of sklearn
+                accuracy = sklearn.metrics.accuracy_score(
+                    labels_test, labels_test_pred)
+                print("validation accuracy:", accuracy)
+
+                return [0.0, 0.0, accuracy]
+
+            return callback
+
+
         proc = cml.build_current_best_process(
-            data_train, labels_train)
+            data_train, labels_train,
+            prepare_callback)
 
         (classify_char_image,
          prep_image, feat_extractor, feat_selector,
