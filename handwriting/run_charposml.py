@@ -28,24 +28,29 @@ VERBOSE = False
 MODE_TRAIN = "train"
 MODE_TUNE = "tune"
 
+# IGNORE_CHARS = ["`", "~", "\\", "/"]
+IGNORE_CHARS = []
 
-def build_classification_process(
+DO_LAZY_EXTRACTION = True
+MAX_EPOCHS = 32
+CALLBACK_RATE = 1
+
+
+def build_classification_process_cnn(
         data_train,
         labels_train,
         pad_width,
+        pad_height,
+        start_row,
         prepare_callback=None):
 
-    """build a classification process"""
+    """build a classification process using a CNN"""
 
-    start_row = 0 # 32
-
-    pad_image = partial(improc.pad_image, width=pad_width, height=96)
+    pad_image = partial(improc.pad_image, width=pad_width, height=pad_height)
 
     def prep_image(image):
         """prepare an image (result is still a 2d image)"""
         image = image[start_row:, :]
-        # return 255.0 - improc.grayscale(
-        #     improc.align(pad_image(image), x_align=False))
         return 255.0 - improc.grayscale(pad_image(image))
 
     if VISUALIZE:
@@ -53,159 +58,179 @@ def build_classification_process(
         for cur_label, group in ml.group_by_label(data_train, labels_train):
             print("label:", cur_label)
             group_prepped = [(prep_image(x), None) for x in group]
-            # print(np.min(group_prepped[0][0]), np.max(group_prepped[0][0]))
             group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
-            chars_working, chars_done = charclass.label_chars(group_pred)
+        _ = charclass.label_chars(group_pred)
 
-    if False:
+    # training process for deep neural networks
 
-        # training process for traditional machine learning models
-        # with cross validation
+    callbacks_log_filename = (
+        "log_charpos_callback.txt"
+        if prepare_callback is not None
+        else None)
+
+    if not DO_LAZY_EXTRACTION:
 
         def feat_extractor(image):
             """convert image to feature vector"""
             img_p = prep_image(image)
-            img_g = img_p / 255.0
-            img_g = img_g / np.max(img_g)
-
-            grad_0, grad_1 = np.gradient(img_g)
-            return np.hstack((
-                improc.max_pool_multi(grad_0, [2]),
-                improc.max_pool_multi(grad_1, [2]),
-                improc.max_pool_multi(img_g, [2])))
+            img_g = img_p / 255.0 - 0.5
+            return np.array(img_g, np.float32)  # Torch wants float32
 
         feats_train = [feat_extractor(x) for x in data_train]
-        # feat_selector = ml.build_feat_selection_pca(feats_train, 0.99)
-        # feat_selector = ml.build_feat_selection_pca(feats_train, 0.99)
-        feat_selector = lambda x: x
-        # feat_selector = ml.build_scaler(feats_train, robust=True)
 
-        feats_train = feat_selector(feats_train)
-        print("feature length:", len(feats_train[0]))
+        print("preparing callback...", end="", flush=True)
+        callback = prepare_callback(feat_extractor)
+        print("done")
 
-        # classifier = ml.train_classifier(
-        #     build_fit_model=ml.linear_svc,
-        #     cross_validation=ml.kfold_cross_validation(5),
-        #     score_func=partial(ml.score_auc, decision_function=True),
-        #     feats=feats_train,
-        #     labels=labels_train,
-        #     gamma=np.logspace(-2, 0, 20),
-        # )
+        lazy_extractor = None
 
-        classifier = ml.train_classifier(
-            build_fit_model=ml.nn_classifier,
-            cross_validation=ml.kfold_cross_validation(10),
-            score_func=partial(ml.score_auc, decision_function=False),
-            feats=feats_train,
-            labels=labels_train,
-            # hidden_layer_sizes=[(16, 16), (32, 32), (256, 128), (256, 64), (256, 32)],
-            # hidden_layer_sizes=[(128, 128, 128), (256, 256, 256)],
-            # hidden_layer_sizes=[(128,), (256,), (128, 128), (256, 256)],
-            hidden_layer_sizes=[(128, 128, 128), (128, 128, 128, 128), (64, 64), (64, 64, 64), (64, 64, 64, 64)],
-            # alpha=[0.0001, 0.01]
-            alpha=[0.0001, 0.001, 0.01]
-        )
     else:
+        # trade memory for compute
 
-        # training process for deep neural networks
+        def color_to_grayuint(image):
+            """prepare image to ubyte"""
+            image = image[start_row:, :]
+            return np.array(
+                255.0 - improc.grayscale(pad_image(image)),
+                dtype=np.uint8)
 
-        do_lazy_extraction = True
+        def grayuint_to_grayfloat(image):
+            """convert uint8 image to floating point"""
+            img_g = image / 255.0 - 0.5
+            return np.array(img_g, np.float32)
 
-        callbacks_log_filename = (
-            "log_charpos_callback.txt"
-            if prepare_callback is not None
-            else None)
+        feat_extractor = lambda x: grayuint_to_grayfloat(color_to_grayuint(x))
 
-        if not do_lazy_extraction:
+        # this is very small
+        feats_train = [color_to_grayuint(x) for x in data_train]
+        del data_train
+        gc.collect()
 
-            def feat_extractor(image):
-                """convert image to feature vector"""
-                img_p = prep_image(image)
-                img_g = img_p / 255.0 - 0.5
-                return np.array(img_g, np.float32) # Torch wants float32
+        print("preparing callback...", end="", flush=True)
+        callback = prepare_callback(feat_extractor)
+        print("done")
 
-            feats_train = [feat_extractor(x) for x in data_train]
-            feat_selector = lambda x: x
-            feats_train = feat_selector(feats_train)
+        lazy_extractor = grayuint_to_grayfloat
 
-            print("preparing callback...", end="", flush=True)
-            callback = prepare_callback(feat_extractor, feat_selector)
-            print("done")
+    print(
+        "training features (input to CNN) size:",
+        util.mbs(feats_train), "MiB")
 
-            lazy_extractor = None
+    callbacks_log_filename = (
+        "log_charpos_callback.txt"
+        if prepare_callback is not None
+        else None)
 
-        else:
-            # trade memory for compute
+    classifier = cnn.experimental_cnn(
+        batch_size=16,  # 8
+        max_epochs=MAX_EPOCHS,
+        learning_rate=0.001,
+        momentum=0.9,
+        epoch_log_filename="log_charpos.txt",
+        callback_log_filename=callbacks_log_filename,
+        callback=callback,
+        callback_rate=CALLBACK_RATE,
+        lazy_extractor=lazy_extractor
+    )(
+        feats_train,
+        labels_train
+    )
 
-            def color_to_grayuint(image):
-                """prepare image to ubyte"""
-                image = image[start_row:, :]
-                return np.array(
-                    255.0 - improc.grayscale(pad_image(image)),
-                    dtype=np.uint8)
+    classify_charpos_image = lambda image: classifier(feat_extractor(image))
 
-            def grayuint_to_grayfloat(image):
-                """convert uint8 image to floating point"""
-                img_g = image / 255.0 - 0.5
-                return np.array(img_g, np.float32)
+    return (
+        classify_charpos_image,
+        prep_image,
+        feat_extractor,
+        classifier)
 
-            feat_extractor = lambda x: grayuint_to_grayfloat(color_to_grayuint(x))
-            feat_selector = lambda x: x
 
-            # this is very small
-            feats_train = [color_to_grayuint(x) for x in data_train]
-            del data_train
-            gc.collect()
+def build_classification_process(
+        data_train,
+        labels_train,
+        pad_width,
+        pad_height,
+        start_row):
 
-            print("preparing callback...", end="", flush=True)
-            callback = prepare_callback(
-                feat_extractor, feat_selector)
-            print("done")
+    """build a classification process using traditional machine learning with cross validation"""
 
-            lazy_extractor = grayuint_to_grayfloat
+    pad_image = partial(improc.pad_image, width=pad_width, height=pad_height)
 
-        print(
-            "training features (input to CNN) size:",
-            util.mbs(feats_train), "MiB")
+    def prep_image(image):
+        """prepare an image (result is still a 2d image)"""
+        image = image[start_row:, :]
+        return 255.0 - improc.grayscale(pad_image(image))
 
-        callbacks_log_filename = (
-            "log_charpos_callback.txt"
-            if prepare_callback is not None
-            else None)
+    if VISUALIZE:
+        # visualize training data
+        for cur_label, group in ml.group_by_label(data_train, labels_train):
+            print("label:", cur_label)
+            group_prepped = [(prep_image(x), None) for x in group]
+            group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
+            _ = charclass.label_chars(group_pred)
 
-        # prepare the callback...this is a little awkward
-        # I think the solution is probably to return all of the pieces
-        # along with a function which trains the classifier given callbacks
-        # or something like that
+    def img_to_vec(image):
+        """convert image to 1D feature vector"""
+        img_p = prep_image(image)
+        img_g = img_p / 255.0
+        img_g = img_g / np.max(img_g)
 
-        classifier = cnn.experimental_cnn(
-            batch_size=16, # 8
-            max_epochs=12,
-            learning_rate=0.001,
-            momentum=0.9,
-            epoch_log_filename="log_charpos.txt",
-            callback_log_filename=callbacks_log_filename,
-            callback=callback,
-            callback_rate=4,
-            lazy_extractor=lazy_extractor
-        )(
-            feats_train,
-            labels_train
-        )
+        return improc.max_pool_multi(img_g, [2])
 
-    classify_char_image = ml.classification_process(
-        feat_extractor, feat_selector, classifier)
+        grad_0, grad_1 = np.gradient(img_g)
+        return np.hstack((
+            improc.max_pool_multi(grad_0, [2]),
+            improc.max_pool_multi(grad_1, [2]),
+            improc.max_pool_multi(img_g, [2])))
 
-    return (classify_char_image,
-            prep_image, feat_extractor, feat_selector,
-            classifier)
+    # TODO: update ml funcs for feature selection to operate on one thing at a time
+    feats_train_intermediate = [img_to_vec(x) for x in data_train]
+    feat_selector = ml.feat_selection_pca(0.99)(feats_train_intermediate)
+    # feat_selector = ml.feat_scaler(True)(feats_train_intermediate)
+    # feat_selector = lambda x: x
+
+    feat_extractor = lambda image: feat_selector(img_to_vec(image))
+
+    feats_train = [feat_extractor(x) for x in data_train]
+    print("feature length:", len(feats_train[0]))
+
+    classifier = ml.train_classifier(
+        build_fit_model=ml.linear_svc,
+        cross_validation=ml.kfold_cross_validation(5),
+        score_func=partial(ml.score_auc, decision_function=True),
+        feats=feats_train,
+        labels=labels_train,
+        c=np.logspace(-3, 0, 10),
+    )
+
+    # classifier = ml.train_classifier(
+    #     build_fit_model=ml.nn_classifier,
+    #     cross_validation=ml.kfold_cross_validation(10),
+    #     score_func=partial(ml.score_auc, decision_function=False),
+    #     feats=feats_train,
+    #     labels=labels_train,
+    #     # hidden_layer_sizes=[(16, 16), (32, 32), (256, 128), (256, 64), (256, 32)],
+    #     # hidden_layer_sizes=[(128, 128, 128), (256, 256, 256)],
+    #     # hidden_layer_sizes=[(128,), (256,), (128, 128), (256, 256)],
+    #     hidden_layer_sizes=[(128, 128, 128), (128, 128, 128, 128), (64, 64), (64, 64, 64), (64, 64, 64, 64)],
+    #     # alpha=[0.0001, 0.01]
+    #     alpha=[0.0001, 0.001, 0.01]
+    # )
+
+    classify_charpos_image = lambda image: classifier(feat_extractor(image))
+
+    return (
+        classify_charpos_image,
+        prep_image,
+        feat_extractor,
+        classifier)
+
 
 
 def _visualize_position_predictions(
         word_im,
         positions_true,
         positions_pred,
-        distances,
         closest_idxs):
 
     """render an image for a single word"""
@@ -325,7 +350,6 @@ def build_distance_test(word_ims_test, char_poss_test):
                 #     word_im.data,
                 #     positions_true,
                 #     positions_pred,
-                #     distances,
                 #     idxs)
 
                 disp_im = _visualize_position_predictions_stacked(
@@ -344,7 +368,6 @@ def build_distance_test(word_ims_test, char_poss_test):
             cv2.imshow("positions", disp_im)
             cv2.waitKey()
 
-        # TODO: should I be aggregating this differently?
         # mean overlap - higher is better
         res = np.mean([1.0 - y for x in distances for y in x])
         return res
@@ -355,16 +378,11 @@ def build_distance_test(word_ims_test, char_poss_test):
 def _load_words(filenames):
     """load verified word image samples from multiple files"""
 
-    # TODO: move into loop to save memory
-
     images = []
     positions = []
 
     for filename in filenames:
         line_poss = util.load(filename).result
-
-        # load multiple files
-        # line_poss = [y for x in filenames for y in util.load(x).result]
 
         # get word images and verified character positions
         word_ims = [word_pos.result
@@ -383,6 +401,7 @@ def _load_words(filenames):
         for word_im in word_ims:
             print("".join([char_pos.result.result
                            for char_pos in word_im.result]), end=" ")
+        print()
 
         # save memory by ditching extracted character images etc
         for word_im in word_ims:
@@ -392,20 +411,14 @@ def _load_words(filenames):
     return images, positions
 
 
-def _load_samples(filenames, half_width, offset):
-    """load word image slices from multiple files"""
-
-    # ignore_chars = ["`", "~", "\\", "/"]
-    ignore_chars = []
+def _load_samples_old(filenames, half_width, offset):
+    """old method of loading word image slices"""
 
     images = []
     combined_labels = []
 
     for filename in filenames:
         line_poss = util.load(filename).result
-
-        # load multiple files
-        # line_poss = [y for x in filenames for y in util.load(x).result]
 
         # get word images and verified character positions
         word_ims = [word_pos.result
@@ -416,35 +429,34 @@ def _load_samples(filenames, half_width, offset):
         # helper functions for extracting images
         # extract_char = lambda cpos, im: im[:, np.maximum(cpos[0], 0):cpos[1]]
 
-        extract_char_half_width = lambda x, im: improc.extract_pos(
-            (x + offset - half_width, x + offset + half_width), im)
+        def extract_char_half_width(x, im):
+            return improc.extract_pos(
+                (x + offset - half_width, x + offset + half_width), im)
 
-        if False:
+        def half(start, end):
+            """point halfway between two points"""
+            return int((start + end) * 0.5)
 
-            def half(start, end):
-                """point halfway between two points"""
-                return int((start + end) * 0.5)
+        def extract(extract_func):
+            """extract images from valid char positions using extract_func"""
+            res = [(extract_func(char_pos.data, word_im.data),
+                    char_pos.result.result, char_pos.data, word_im.data)
+                   for word_im in word_ims
+                   for char_pos in word_im.result
+                   if (char_pos.result.result not in IGNORE_CHARS)
+                   and char_pos.result.verified
+                   and (char_pos.data[1] - char_pos.data[0]) > 1]
+            return res
 
-            def extract(extract_func):
-                """extract images from valid char positions using extract_func"""
-                res = [(extract_func(char_pos.data, word_im.data),
-                        char_pos.result.result, char_pos.data, word_im.data)
-                       for word_im in word_ims
-                       for char_pos in word_im.result
-                       if (char_pos.result.result not in ignore_chars)
-                       and char_pos.result.verified
-                       and (char_pos.data[1] - char_pos.data[0]) > 1]
-                return res
-
-            # extract images from the ends of all positions in each word
-            char_end_ims = (
+        # extract images from the ends of all positions in each word
+        char_end_ims = (
                 extract(lambda x, y: extract_char_half_width(x[1], y)) +
                 extract(lambda x, y: extract_char_half_width(x[1] + 1, y)) +
                 extract(lambda x, y: extract_char_half_width(x[1] - 1, y)))
 
-            # extract images from half, one fourth, and three fourths of the way
-            # between starts and ends of each position
-            char_middle_ims = (
+        # extract images from half, one fourth, and three fourths of the way
+        # between starts and ends of each position
+        char_middle_ims = (
                 extract(lambda x, y: extract_char_half_width(
                     half(x[0], x[1]), y)) +
                 extract(lambda x, y: extract_char_half_width(
@@ -452,60 +464,133 @@ def _load_samples(filenames, half_width, offset):
                 extract(lambda x, y: extract_char_half_width(
                     half(half(x[0], x[1]), x[1]), y)))
 
-            # filter out images that are too small
-            char_end_ims = [x for x in char_end_ims if x[0].shape[1] > 1.5 * half_width]
-            char_middle_ims = [x for x in char_middle_ims if x[0].shape[1] > 1.5 * half_width]
+        # filter out images that are too small
+        char_end_ims = [x for x in char_end_ims if x[0].shape[1] > 1.5 * half_width]
+        char_middle_ims = [x for x in char_middle_ims if x[0].shape[1] > 1.5 * half_width]
 
-            data_with_src = char_end_ims + char_middle_ims
-            labels = [True] * len(char_end_ims) + [False] * len(char_middle_ims)
+        data_with_src = char_end_ims + char_middle_ims
+        labels = [True] * len(char_end_ims) + [False] * len(char_middle_ims)
 
-            combined_labels.append([(x, y[1]) for x, y in zip(labels, data_with_src)])
-            images.append([x[0] for x in data_with_src])
-
-        else:
-
-            area_true = 2
-
-            for word_im in word_ims:
-
-                for char_pos in word_im.result:
-                    if ((char_pos.result.result not in ignore_chars)
-                            and char_pos.result.verified
-                            and (char_pos.data[1] - char_pos.data[0]) > 1):
-
-                        char_im = char_pos.result.data
-
-                        for x_pos in range(0, char_im.shape[1]):
-
-                            extract_im = extract_char_half_width(
-                                char_pos.data[0] + x_pos, word_im.data)
-
-                            # choose gap samples from start and end of each
-                            # character position
-                            label = (x_pos < area_true or x_pos > char_im.shape[1] - area_true - 1)
-
-                            # choose gap samples only from start
-                            # label = True if x_pos < area_true else False
-
-                            # choose gap samples only from end
-                            # label = x_pos > (char_im.shape[1] - area_true)
-
-                            images.append(extract_im)
-
-                            combined_labels.append(
-                                (label,
-                                 char_pos.result.result))
-
-                            # cv2.namedWindow("word", cv2.WINDOW_NORMAL)
-                            # cv2.namedWindow("extract", cv2.WINDOW_NORMAL)
-                            # disp_word_im = np.copy(word_im.data)
-                            # disp_word_im[:, char_pos.data[0] + x] = (0, 0, 255)
-                            # print(char_pos.data[0] + x, label, char_pos.result.result)
-                            # cv2.imshow("word", disp_word_im)
-                            # cv2.imshow("extract", extract_im)
-                            # cv2.waitKey(200)
+        combined_labels.append([(x, y[1]) for x, y in zip(labels, data_with_src)])
+        images.append([x[0] for x in data_with_src])
 
     return images, combined_labels
+
+
+def _load_samples(filenames, half_width, offset):
+    """load word image slices from multiple files"""
+
+    images = []
+    combined_labels = []
+
+    for filename in filenames:
+        line_poss = util.load(filename).result
+
+        # get word images and verified character positions
+        word_ims = [word_pos.result
+                    for line_pos in line_poss
+                    for word_pos in line_pos.result.result
+                    if word_pos.result.verified]
+
+        # helper functions for extracting images
+        # extract_char = lambda cpos, im: im[:, np.maximum(cpos[0], 0):cpos[1]]
+
+        def extract_char_half_width(x, im): return improc.extract_pos(
+            (x + offset - half_width, x + offset + half_width), im)
+
+        area_true = 2
+
+        for word_im in word_ims:
+
+            for char_pos in word_im.result:
+                if ((char_pos.result.result not in IGNORE_CHARS)
+                        and char_pos.result.verified
+                        and (char_pos.data[1] - char_pos.data[0]) > 1):
+
+                    char_im = char_pos.result.data
+
+                    for x_pos in range(0, char_im.shape[1]):
+
+                        extract_im = extract_char_half_width(
+                            char_pos.data[0] + x_pos, word_im.data)
+
+                        # choose gap samples from start and end of each
+                        # character position
+                        label = (x_pos < area_true or x_pos > char_im.shape[1] - area_true - 1)
+
+                        # choose gap samples only from start
+                        # label = True if x_pos < area_true else False
+
+                        # choose gap samples only from end
+                        # label = x_pos > (char_im.shape[1] - area_true)
+
+                        images.append(extract_im)
+                        combined_labels.append((label, char_pos.result.result))
+
+                        # cv2.namedWindow("word", cv2.WINDOW_NORMAL)
+                        # cv2.namedWindow("extract", cv2.WINDOW_NORMAL)
+                        # disp_word_im = np.copy(word_im.data)
+                        # disp_word_im[:, char_pos.data[0] + x] = (0, 0, 255)
+                        # print(char_pos.data[0] + x, label, char_pos.result.result)
+                        # cv2.imshow("word", disp_word_im)
+                        # cv2.imshow("extract", extract_im)
+                        # cv2.waitKey(200)
+
+    return images, combined_labels
+
+
+def build_prepare_validation_callback(
+        data_validate,
+        labels_validate,
+        build_find_prob,
+        distance_test):
+
+    def prepare_callback(feat_extractor):
+
+        """given feature extractor functions and validation data, build callback
+        to validate the network during training"""
+
+        feats_validate = [feat_extractor(x) for x in data_validate]
+        print("validation features size:", util.mbs(feats_validate), "MiB")
+
+        def callback(classifier):
+            """helper"""
+
+            def img_to_prob(img):
+                """helper"""
+                res = classifier.predict_proba(feat_extractor(img))
+                # probabilities are False, True in 1x2 tensor
+                # so [0, 1] is the True probability
+                return res[0, 1]
+
+            print("distance test...", end="", flush=True)
+            find_prob = build_find_prob(img_to_prob)
+            distance = distance_test(find_prob, False)
+            print("done")
+
+            print("validation distance:", distance)
+
+            print("predicting...", end="", flush=True)
+            probs_true_pred = [classifier.predict_proba(x)[0, 1] for x in feats_validate]
+            labels_validate_pred = [x > 0.5 for x in probs_true_pred]
+            print("done")
+
+            # TODO: something generic here instead of sklearn
+
+            fpr, tpr, _ = sklearn.metrics.roc_curve(
+                labels_validate, probs_true_pred)
+            roc_auc = sklearn.metrics.auc(fpr, tpr)
+            print("validation ROC AUC:", roc_auc)
+
+            accuracy = sklearn.metrics.accuracy_score(
+                labels_validate, labels_validate_pred)
+            print("validation accuracy:", accuracy)
+
+            return [distance, roc_auc, accuracy]
+
+        return callback
+
+    return prepare_callback
 
 
 def main(argv):
@@ -516,40 +601,43 @@ def main(argv):
     else:
         mode = argv[1]
 
+    # TODO: random seed for pytorch
     np.random.seed(0)
     random.seed(0)
 
     model_filename = "models/classify_charpos.pkl"
-    half_width = 16 # 16
+    half_width = 16
+    pad_height = 96
+    start_row = 0
     offset = 0
     do_destructive_prepare_balance = True
     do_balance = False
-    balance_factor = 1024 # 256 # 128
+    balance_factor = 1024
+    thresh_true = 0.5
 
-    train_filenames, test_filenames = data.pages([5, 6, 7, 9, 10, 11, 12], [8])
+    # this one is the best !
+    # train_filenames = data.pages([5, 6, 7, 9, 10, 11, 12])
+    # test_filenames = data.pages([8])
 
-    # train_filenames, test_filenames = data.pages([0, 1, 2, 3, 4, 5, 6], [7, 8])
-    # train_filenames, test_filenames = data.pages([5, 6, 9, 10, 11, 12], [7, 8])
-    # train_filenames, test_filenames = data.pages([0, 1, 2, 3, 4, 5, 6, 9, 10, 11, 12], [7, 8])
+    # this also seems to work well
+    # train_filenames = data.pages([0, 1, 5, 6, 7, 9, 10, 11, 12])
+    # test_filenames = data.pages([8])
 
+    train_filenames = data.pages([0, 1, 5, 6, 7, 9, 10, 11, 12, 13, 14])
+    test_filenames = data.pages([8])
 
-    # train_filenames, test_filenames = data.pages([5, 6, 7, 9, 10], [8])
-    # train_filenames, test_filenames = data.pages([5, 6, 7], [8])
+    # for integration testing
+    # train_filenames = data.pages([5, 6, 7])
+    # test_filenames = data.pages([8])
 
     print("training files:", train_filenames)
     print("test files:", test_filenames)
 
     print("loading and balancing datasets...")
 
-    # import gc
-    # gc.collect()
-
     # load training set
     data_train_unbalanced, labels_train_unbalanced = _load_samples(
         train_filenames, half_width, offset)
-
-    # print("training data shapes:", sorted(list(set([x.shape for x in data_train_unbalanced]))))
-    # print("training data length:", len(data_train_unbalanced))
 
     print(
         "unbalanced training data size:",
@@ -594,13 +682,7 @@ def main(argv):
 
     # load test set
     data_test, labels_test = _load_samples(test_filenames, half_width, offset)
-
-    # the purpose of this is to group the test data and sort it for easier
-    # visualization later
-    test_gr = dict(ml.group_by_label(data_test, labels_test))
-    test_grf = test_gr
-    data_test, labels_test = zip(*[
-        (y, x[0]) for x in test_grf.items() for y in x[1]])
+    data_test, labels_test = ml.sort_by_label(data_test, labels_test)
 
     print("test data size:    ", util.mbs(data_test), "MiB")
 
@@ -621,15 +703,8 @@ def main(argv):
              for x in ml.group_by_label(data_test, labels_test)])
 
     print("discarding letter information from labels")
-
     labels_train = [x[0] for x in labels_train]
     labels_test = [x[0] for x in labels_test]
-
-    # rebalance between true and false
-    # data_train, labels_train = ml.balance(
-    #     data_train, labels_train,
-    #     2000,
-    #     lambda x: x)
 
     print(
         "training group sizes:",
@@ -640,7 +715,6 @@ def main(argv):
         [(x[0], len(x[1]))
          for x in ml.group_by_label(data_test, labels_test)])
 
-    # extract_char = lambda cpos, im: im[:, cpos[0]:cpos[1]]
     extract_char = improc.extract_pos
 
     if mode == MODE_TRAIN:
@@ -650,65 +724,59 @@ def main(argv):
         word_ims_test, char_poss_test = _load_words(test_filenames)
         distance_test = build_distance_test(word_ims_test, char_poss_test)
 
-        def prepare_callback(feat_extractor, feat_selector):
-            """given feature extractor and feature selector functions,
-            build callbacks to test the network during training"""
-            feats_test = feat_selector([feat_extractor(x) for x in data_test])
+        if True:
 
-            print("validation features size:", util.mbs(feats_test), "MiB")
+            # CNN
 
-            def callback(model):
-                """helper"""
-                print("predicting...", end="", flush=True)
-                probs_true_pred = [x[0, 1] for x in model.predict_proba(feats_test)]
-                labels_test_pred = [x > 0.5 for x in probs_true_pred]
-                print("done")
+            # given the feature extractor that's being prepared inside the model training,
+            # prepare a callback for validating the model during training
 
-                def classify_ml(img):
-                    """helper"""
-                    res = model.predict_proba(
-                        feat_selector([feat_extractor(y) for y in img]))
-                    # probabilities are False, True in 1x2 tensor
-                    # so [0, 1] is the True probability
-                    res = [x[0, 1] for x in res]
-                    return res
+            # TODO: eventually load separate validation data to use instead of test data
+            data_validate = data_test
+            labels_validate = labels_test
 
-                thresh = 0.5
-                find_classify = lambda word_im: findletters.find_classify_prob(
-                    word_im, half_width, extract_char, classify_ml, thresh)
-                distance = distance_test(find_classify, False)
-                print("validation distance:", distance)
+            def build_find_prob(img_to_prob):
+                return lambda word_im: findletters.find_prob(
+                    word_im, half_width, extract_char, img_to_prob, thresh_true)
 
-                fpr, tpr, _ = sklearn.metrics.roc_curve(
-                    labels_test, probs_true_pred)
-                roc_auc = sklearn.metrics.auc(fpr, tpr)
-                print("validation ROC AUC:", roc_auc)
+            prepare_callback = build_prepare_validation_callback(
+                data_validate,
+                labels_validate,
+                build_find_prob,
+                distance_test
+            )
 
-                # TODO: something generic here instead of sklearn
-                accuracy = sklearn.metrics.accuracy_score(
-                    labels_test, labels_test_pred)
-                print("validation accuracy:", accuracy)
+            proc = build_classification_process_cnn(
+                data_train,
+                labels_train,
+                pad_width=half_width * 2 - 8,
+                pad_height=pad_height,
+                start_row=start_row,
+                prepare_callback=prepare_callback)
 
-                return [distance, roc_auc, accuracy]
+            (classify_char_pos,
+             prep_image, feat_extractor,
+             classifier) = proc
 
-            return callback
+        else:
 
-        proc = build_classification_process(
-            data_train,
-            labels_train,
-            pad_width=half_width * 2 - 8,
-            prepare_callback=prepare_callback)
+            # traditional ML
 
-        (classify_char_pos,
-         prep_image, feat_extractor, feat_selector,
-         classifier) = proc
+            proc = build_classification_process(
+                data_train,
+                labels_train,
+                pad_width=half_width * 2 - 8,
+                pad_height=pad_height,
+                start_row=start_row
+            )
+
+            classify_char_pos, prep_image, feat_extractor, classifier = proc
 
         print("done")
 
-        feats_test = feat_selector([feat_extractor(x) for x in data_test])
-        # print("score on test dataset:", classifier_score(feats_test, labels_test))
-        # labels_test_pred = classify_char_pos(data_test)
-        labels_test_pred = classifier(feats_test)
+        feats_test = [feat_extractor(x) for x in data_test]
+        labels_test_pred = [classifier(x) for x in feats_test]
+
         print("accuracy score on test dataset:", sklearn.metrics.accuracy_score(
             labels_test, labels_test_pred))
 
@@ -803,41 +871,29 @@ def main(argv):
 
         # load ML model
         proc = util.load_dill(model_filename)
-        (classify_char_pos,
-         prep_image, feat_extractor, feat_selector,
-         classifier) = proc
+        classify_char_pos, prep_image, feat_extractor, classifier = proc
 
-        # def classify_ml(img):
-        #     """helper"""
-        #     # select the column of true probabilities
-        #     # (column 1) from the result array
-        #     res = classifier.model.predict_proba(
-        #         feat_selector([feat_extractor(y) for y in img]))[:, 1]
-        #    return res
-
-        def classify_ml(img):
+        def img_to_prob(img):
             """helper"""
-            res = classifier.predict_proba(
-                feat_selector([feat_extractor(y) for y in img]))
+            res = classifier.predict_proba(feat_extractor(img))
             # probabilities are False, True in 1x2 tensor
             # so [0, 1] is the True probability
-            res = [x[0, 1] for x in res]
-            return res
+            return res[0, 1]
 
-        # thresh = 0.8
-        # find_classify = lambda word_im: findletters.find_classify_prob(
-        #      word_im, half_width, extract_char, classify_ml, thresh)
-        # find_comp_classify = lambda word_im: findletters.find_combine(
+        # find_comp = lambda x: findwords.find_conc_comp(x[16:-16, :], merge=True)
+        # find_prob = lambda word_im: findletters.find_prob(
+        #     word_im, half_width, extract_char, img_to_prob, thresh_true)
+        # find_combine = lambda word_im: findletters.find_combine(
         #     word_im, extract_char,
         #     find_comp,
-        #     find_classify)
-        # score = distance_test(find_comp_classify, False)
-        # print("connected components + ML (", thresh, ") :", score)
+        #     find_prob)
+        # score = distance_test(find_combine, False)
+        # print("connected components + ML (", thresh_true, ") :", score)
 
-        for thresh in [0.5]: # [0.0, 0.2, 0.4, 0.6, 0.7, 0.8, 0.9, 1.0]:
-            find_classify = lambda word_im: findletters.find_classify_prob(
-                word_im, half_width, extract_char, classify_ml, thresh)
-            score = distance_test(find_classify, True)
+        for thresh in [0.5, 0.6, 0.7]:  # [0.0, 0.2, 0.4, 0.6, 0.7, 0.8, 0.9, 1.0]:
+            find_prob = lambda word_im: findletters.find_prob(
+                word_im, half_width, extract_char, img_to_prob, thresh)
+            score = distance_test(find_prob, False)
             print("ML (", thresh, ") :", score)
 
 

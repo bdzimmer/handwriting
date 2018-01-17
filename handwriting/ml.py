@@ -37,9 +37,13 @@ class CallableModel(object):
         """init method"""
         self.model = model
 
-    def __call__(self, feats):
+    # def __call__(self, feats):
+    #     """model becomes callable"""
+    #     return self.model.predict(feats)
+
+    def __call__(self, feat_vec):
         """model becomes callable"""
-        return self.model.predict(feats)
+        return self.model.predict([feat_vec])[0]
 
 
 def feat_selection_pca(n_components):
@@ -53,9 +57,9 @@ def feat_selection_pca(n_components):
         print("PCA components:", pca.n_components_, "/", pca.n_features_)
         print("PCA variance explained:", np.sum(pca.explained_variance_ratio_))
 
-        def select(feats_test):
+        def select(feat_vec):
             """perform feature selection"""
-            return pca.transform(feats_test)
+            return pca.transform([feat_vec])[0]
 
         return select
     return fit
@@ -73,9 +77,9 @@ def feat_scaler(robust):
         """fit model"""
         scaler.fit(feats)
 
-        def scale(feats_test):
+        def scale(feat_vec):
             """peform scaling"""
-            return scaler.transform(feats_test)
+            return scaler.transform([feat_vec])[0]
 
         return scale
     return fit
@@ -149,7 +153,6 @@ def score_accuracy(model, feats_test, labels_test):
     labels_test_pred = model.predict(feats_test)
     score = sklearn.metrics.accuracy_score(labels_test, labels_test_pred)
     return score
-
 
 
 def score_auc(model, feats_test, labels_test, decision_function=True):
@@ -288,17 +291,6 @@ def train_classifier(
     return model
 
 
-def classification_process(feat_extractor, feat_selector, classifier):
-    """combine feature extraction, feature selection, and classification"""
-
-    def predict(data):
-        """helper"""
-        feats = feat_selector([feat_extractor(x) for x in data])
-        return classifier(feats)
-
-    return predict
-
-
 def group_by_label(samples, labels):
     """group samples by label"""
 
@@ -311,6 +303,14 @@ def group_by_label(samples, labels):
     # order = np.argsort([len(x) for x in grouped])
     order = sorted(range(len(grouped)), key=lambda k: unique_labels[k])
     return [res_unsorted[idx] for idx in order]
+
+
+def sort_by_label(samples, labels):
+    """group and sort samples for easier visualization"""
+
+    grouped = dict(group_by_label(samples, labels))
+    return zip(*[
+        (y, x[0]) for x in grouped.items() for y in x[1]])
 
 
 def prepare_balance(samples, labels, balance_factor):

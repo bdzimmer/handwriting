@@ -5,11 +5,12 @@ Experimental convolutional neural net based on PyTorch tutorial.
 
 """
 
-# Copyright (c) 2017 Ben Zimmer. All rights reserved.
+# Copyright (c) 2018 Ben Zimmer. All rights reserved.
 
 import time
 
 import numpy as np
+import sklearn
 
 import torch
 from torch import nn, optim
@@ -108,37 +109,32 @@ class CallableTorchModel(object):
         self.model = model
         self.unique_labels = unique_labels
 
-    def __call__(self, feats):
+    def __call__(self, img):
         """model becomes callable"""
-        # not sure that this generalizes, but will use it for now
-        res = []
-        for img in feats:
-            # img = np.array(img, dtype=np.float32)
-            img_var = Variable(
-                torch.from_numpy(img[None, None, :, :]), requires_grad=True)
-            output = self.model(img_var)
-            _, label_idx = torch.max(output.data, 1)
-            res.append(self.unique_labels[label_idx[0]])
-        return res
 
-    def predict_proba(self, feats):
+        # img = np.array(img, dtype=np.float32)
+        img_var = Variable(
+            torch.from_numpy(img[None, None, :, :]), requires_grad=True)
+        output = self.model(img_var)
+        _, label_idx = torch.max(output.data, 1)
+        return self.unique_labels[label_idx[0]]
+
+    def predict_proba(self, img):
         """helper"""
         # TODO: probably name this something else
-        # I would rather achieve dynamic dispatch via polymorphic wrapper
+        # Eventually, I would rather achieve dynamic dispatch via polymorphic wrapper
         # functions rather than methods on classes
 
-        res = []
-        for img in feats:
-            # img = np.array(img, dtype=np.float32)
-            img = Variable(
-                torch.from_numpy(img[None, None, :, :]), requires_grad=True)
-            output = self.model(img)
-            proba = nn.Softmax(dim=1)(output).data
-            # print("labels:", self.unique_labels)
-            # print("output:", output)
-            # print("proba:", proba)
-            res.append(proba)
-        return res
+        # img = np.array(img, dtype=np.float32)
+        img = Variable(
+            torch.from_numpy(img[None, None, :, :]), requires_grad=True)
+        output = self.model(img)
+        proba = nn.Softmax(dim=1)(output).data
+        # print("labels:", self.unique_labels)
+        # print("output:", output)
+        # print("proba:", proba)
+
+        return proba
 
 
 def experimental_cnn(
@@ -245,19 +241,18 @@ def experimental_cnn(
                 time.strftime(
                     '%Y-%m-%d %H:%M:%S',
                     time.localtime(start_time + total_time_est)),
-                "(" +  str(np.round((1.0 - frac_complete) * total_time_est / 60, 2)) + " min remaining; " +
+                "(" + str(np.round((1.0 - frac_complete) * total_time_est / 60, 2)) + " min remaining; " +
                 str(np.round(total_time_est / 60, 2)) + " min total)")
 
             if epoch_log_file is not None:
                 model = CallableTorchModel(net, unique_labels)
 
                 if lazy_extractor is None:
-                    labels_train_pred = model(feats_train)
+                    labels_train_pred = [model(x) for x in feats_train]
                 else:
-                    labels_train_pred = [model([lazy_extractor(x)])[0] for x in feats_train]
+                    labels_train_pred = [model(lazy_extractor(x)) for x in feats_train]
                 # TODO: something generic here instead of sklearn
-                import sklearn
-                accuracy = sklearn.metrics.accuracy_score(
+                train_accuracy = sklearn.metrics.accuracy_score(
                     labels_train, labels_train_pred)
 
                 print(
@@ -266,14 +261,14 @@ def experimental_cnn(
                             epoch,
                             mean_loss,
                             mean_grad_magnitude,
-                            accuracy,
+                            train_accuracy,
                             running_time]]),
                     file=epoch_log_file,
                     flush=True)
 
             if callbacks_log_file is not None and (epoch + 1) % callback_rate == 0:
-                model = CallableTorchModel(net, unique_labels)
-                callback_results = callback(model)
+                classifier = CallableTorchModel(net, unique_labels)
+                callback_results = callback(classifier)
                 print(
                     ", ".join(
                         [str(x) for x in (

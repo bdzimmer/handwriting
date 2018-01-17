@@ -49,7 +49,7 @@ def find_thresh_peaks(word_image, peak_sigma=2.0, mean_divisor=1.0, peak_percent
     return gaps_to_positions(gaps)
 
 
-def find_classify(word_im, half_width, extract_char, classify_char_pos):
+def find_classify(word_im, half_width, extract_char, classifier):
     """find character positions using a classifier"""
 
     char_poss = []
@@ -58,7 +58,7 @@ def find_classify(word_im, half_width, extract_char, classify_char_pos):
         test_range = (x - half_width, x + half_width)
         test_im = extract_char(test_range, word_im)
         # print("testing", test_range, test_im.shape)
-        if classify_char_pos([test_im])[0]:
+        if classifier(test_im):
             run.append(x)
         else:
             if len(run) > 1:
@@ -71,15 +71,16 @@ def find_classify(word_im, half_width, extract_char, classify_char_pos):
     return gaps_to_positions([0] + char_poss + [word_im.shape[1] - 1])
 
 
-def find_classify_prob(
-        word_im, half_width, extract_char, classify_char_pos, thresh):
-    """find character positions using a classifier that returns a probability"""
+def find_prob(
+        word_im, half_width, extract_char, img_to_prob, thresh):
+
+    """find character positions using a function that converts an image slice into a probabilityS"""
 
     char_poss = []
     run = []
     for x in range(2, word_im.shape[1] - 2, 1):
-        test_range = (x - half_width, x + half_width)
-        test_im = extract_char(test_range, word_im)
+        test_pos = (x - half_width, x + half_width)
+        test_im = extract_char(test_pos, word_im)
         # disp_im = np.copy(word_im)
         # for idx in run:
         #     disp_im[:, idx[0], 0] = 255
@@ -87,7 +88,7 @@ def find_classify_prob(
         # cv2.imshow("test", disp_im)
         # cv2.waitKey()
         # print("testing", test_range, test_im.shape)
-        prob = classify_char_pos([test_im])[0]
+        prob = img_to_prob(test_im)
         if prob > thresh:
             run.append((x, prob))
         else:
@@ -97,7 +98,7 @@ def find_classify_prob(
                 run = []
     if len(run) > 1:
         char_poss.append(run[np.argmax([y[1] for y in run])][0])
-        run = []
+        # run = []
 
     return gaps_to_positions([0] + char_poss + [word_im.shape[1] - 1])
 
@@ -114,7 +115,7 @@ def find_combine(word_im, extract_char, func1, func2):
     #  findletters.find_thresh_peaks(
     init_poss = func1(word_im)
     res = [add(x, y) for x in init_poss
-            for y in func2(extract_char(x, word_im))]
+           for y in func2(extract_char(x, word_im))]
     res_pos = positions_to_gaps(res) if len(res) > 0 else []
     return gaps_to_positions(
         [0] + res_pos + [word_im.shape[1] - 1])
