@@ -17,214 +17,67 @@ import cv2
 import numpy as np
 import sklearn
 
-from handwriting import util, charclass, ml, func, improc, cnn
+from handwriting import util, charclass, func, improc
+from handwriting import ml, imml
 from handwriting import findletters, findwords
 from handwriting import data
 from handwriting.prediction import Sample
 
-VISUALIZE = False
+VISUALIZE = True
 VERBOSE = False
 
 MODE_TRAIN = "train"
 MODE_TUNE = "tune"
 
-# IGNORE_CHARS = ["`", "~", "\\", "/"]
 IGNORE_CHARS = []
 
-DO_LAZY_EXTRACTION = True
-MAX_EPOCHS = 32
-CALLBACK_RATE = 1
 
+def build_distance_test(word_ims_test, char_poss_test):
+    """create a distance test function to measure jaccard distance
+    for various methods on test data"""
 
-def build_classification_process_cnn(
-        data_train,
-        labels_train,
-        pad_width,
-        pad_height,
-        start_row,
-        prepare_callback=None):
+    def distance_test(find_char_poss_func, visualize=False):
+        """helper"""
+        jaccard_distance = lambda x, y: 1.0 - findletters.jaccard_index(x, y)
+        distances = []
 
-    """build a classification process using a CNN"""
+        ims = []
 
-    pad_image = partial(improc.pad_image, width=pad_width, height=pad_height)
+        for word_im, positions_true in zip(word_ims_test, char_poss_test):
+            # positions_true = [x.data for x in word_im.result]
+            positions_pred = find_char_poss_func(word_im)
+            cur_distances, idxs = findletters.position_list_distance(
+                positions_true, positions_pred,
+                jaccard_distance)
 
-    def prep_image(image):
-        """prepare an image (result is still a 2d image)"""
-        image = image[start_row:, :]
-        return 255.0 - improc.grayscale(pad_image(image))
+            if visualize:
+                # disp_im = _visualize_position_predictions(
+                #     word_im.data,
+                #     positions_true,
+                #     positions_pred,
+                #     idxs)
 
-    if VISUALIZE:
-        # visualize training data
-        for cur_label, group in ml.group_by_label(data_train, labels_train):
-            print("label:", cur_label)
-            group_prepped = [(prep_image(x), None) for x in group]
-            group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
-        _ = charclass.label_chars(group_pred)
+                disp_im = _visualize_position_predictions_stacked(
+                    word_im,
+                    positions_true,
+                    positions_pred)
 
-    # training process for deep neural networks
+                ims.append(disp_im)
 
-    callbacks_log_filename = (
-        "log_charpos_callback.txt"
-        if prepare_callback is not None
-        else None)
+            distances.append(cur_distances)
+            print(".", end="", flush=True)
 
-    if not DO_LAZY_EXTRACTION:
+        if visualize:
+            disp_im = _combine_word_images(ims, 1024, 8, 8)
+            cv2.namedWindow("positions", cv2.WINDOW_NORMAL)
+            cv2.imshow("positions", disp_im)
+            cv2.waitKey()
 
-        def feat_extractor(image):
-            """convert image to feature vector"""
-            img_p = prep_image(image)
-            img_g = img_p / 255.0 - 0.5
-            return np.array(img_g, np.float32)  # Torch wants float32
+        # mean overlap - higher is better
+        res = np.mean([1.0 - y for x in distances for y in x])
+        return res
 
-        feats_train = [feat_extractor(x) for x in data_train]
-
-        print("preparing callback...", end="", flush=True)
-        callback = prepare_callback(feat_extractor)
-        print("done")
-
-        lazy_extractor = None
-
-    else:
-        # trade memory for compute
-
-        def color_to_grayuint(image):
-            """prepare image to ubyte"""
-            image = image[start_row:, :]
-            return np.array(
-                255.0 - improc.grayscale(pad_image(image)),
-                dtype=np.uint8)
-
-        def grayuint_to_grayfloat(image):
-            """convert uint8 image to floating point"""
-            img_g = image / 255.0 - 0.5
-            return np.array(img_g, np.float32)
-
-        feat_extractor = lambda x: grayuint_to_grayfloat(color_to_grayuint(x))
-
-        # this is very small
-        feats_train = [color_to_grayuint(x) for x in data_train]
-        del data_train
-        gc.collect()
-
-        print("preparing callback...", end="", flush=True)
-        callback = prepare_callback(feat_extractor)
-        print("done")
-
-        lazy_extractor = grayuint_to_grayfloat
-
-    print(
-        "training features (input to CNN) size:",
-        util.mbs(feats_train), "MiB")
-
-    callbacks_log_filename = (
-        "log_charpos_callback.txt"
-        if prepare_callback is not None
-        else None)
-
-    classifier = cnn.experimental_cnn(
-        batch_size=16,  # 8
-        max_epochs=MAX_EPOCHS,
-        learning_rate=0.001,
-        momentum=0.9,
-        epoch_log_filename="log_charpos.txt",
-        callback_log_filename=callbacks_log_filename,
-        callback=callback,
-        callback_rate=CALLBACK_RATE,
-        lazy_extractor=lazy_extractor
-    )(
-        feats_train,
-        labels_train
-    )
-
-    classify_charpos_image = lambda image: classifier(feat_extractor(image))
-
-    return (
-        classify_charpos_image,
-        prep_image,
-        feat_extractor,
-        classifier)
-
-
-def build_classification_process(
-        data_train,
-        labels_train,
-        pad_width,
-        pad_height,
-        start_row):
-
-    """build a classification process using traditional machine learning with cross validation"""
-
-    pad_image = partial(improc.pad_image, width=pad_width, height=pad_height)
-
-    def prep_image(image):
-        """prepare an image (result is still a 2d image)"""
-        image = image[start_row:, :]
-        return 255.0 - improc.grayscale(pad_image(image))
-
-    if VISUALIZE:
-        # visualize training data
-        for cur_label, group in ml.group_by_label(data_train, labels_train):
-            print("label:", cur_label)
-            group_prepped = [(prep_image(x), None) for x in group]
-            group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
-            _ = charclass.label_chars(group_pred)
-
-    def img_to_vec(image):
-        """convert image to 1D feature vector"""
-        img_p = prep_image(image)
-        img_g = img_p / 255.0
-        img_g = img_g / np.max(img_g)
-
-        return improc.max_pool_multi(img_g, [2])
-
-        grad_0, grad_1 = np.gradient(img_g)
-        return np.hstack((
-            improc.max_pool_multi(grad_0, [2]),
-            improc.max_pool_multi(grad_1, [2]),
-            improc.max_pool_multi(img_g, [2])))
-
-    # TODO: update ml funcs for feature selection to operate on one thing at a time
-    feats_train_intermediate = [img_to_vec(x) for x in data_train]
-    feat_selector = ml.feat_selection_pca(0.99)(feats_train_intermediate)
-    # feat_selector = ml.feat_scaler(True)(feats_train_intermediate)
-    # feat_selector = lambda x: x
-
-    feat_extractor = lambda image: feat_selector(img_to_vec(image))
-
-    feats_train = [feat_extractor(x) for x in data_train]
-    print("feature length:", len(feats_train[0]))
-
-    classifier = ml.train_classifier(
-        build_fit_model=ml.linear_svc,
-        cross_validation=ml.kfold_cross_validation(5),
-        score_func=partial(ml.score_auc, decision_function=True),
-        feats=feats_train,
-        labels=labels_train,
-        c=np.logspace(-3, 0, 10),
-    )
-
-    # classifier = ml.train_classifier(
-    #     build_fit_model=ml.nn_classifier,
-    #     cross_validation=ml.kfold_cross_validation(10),
-    #     score_func=partial(ml.score_auc, decision_function=False),
-    #     feats=feats_train,
-    #     labels=labels_train,
-    #     # hidden_layer_sizes=[(16, 16), (32, 32), (256, 128), (256, 64), (256, 32)],
-    #     # hidden_layer_sizes=[(128, 128, 128), (256, 256, 256)],
-    #     # hidden_layer_sizes=[(128,), (256,), (128, 128), (256, 256)],
-    #     hidden_layer_sizes=[(128, 128, 128), (128, 128, 128, 128), (64, 64), (64, 64, 64), (64, 64, 64, 64)],
-    #     # alpha=[0.0001, 0.01]
-    #     alpha=[0.0001, 0.001, 0.01]
-    # )
-
-    classify_charpos_image = lambda image: classifier(feat_extractor(image))
-
-    return (
-        classify_charpos_image,
-        prep_image,
-        feat_extractor,
-        classifier)
-
+    return distance_test
 
 
 def _visualize_position_predictions(
@@ -287,14 +140,11 @@ def _combine_word_images(ims, width, x_pad, y_pad):
     image"""
 
     im_height = ims[0].shape[0]
-
     row_height = im_height + y_pad
 
     # build rows of images
     rows = []
-
     idx = 0
-
     row = []
     row_width = 0
 
@@ -303,7 +153,6 @@ def _combine_word_images(ims, width, x_pad, y_pad):
         im_width = im.shape[1]
 
         row_width_new = row_width + im_width + x_pad
-
         if row_width_new <= width:
             row.append(im)
             row_width = row_width_new
@@ -311,10 +160,10 @@ def _combine_word_images(ims, width, x_pad, y_pad):
             rows.append([x for x in row])
             row = [im]
             row_width = im_width + x_pad
+
         idx += 1
 
     res_height = len(rows) * row_height
-
     res = np.zeros((res_height, width, 3), dtype=np.uint8)
 
     for row_idx, row in enumerate(rows):
@@ -325,54 +174,6 @@ def _combine_word_images(ims, width, x_pad, y_pad):
             x_pos += (im.shape[1] + x_pad)
 
     return res
-
-
-def build_distance_test(word_ims_test, char_poss_test):
-    """create a distance test function to measure jaccard distance
-    for various methods"""
-
-    def distance_test(find_char_poss_func, visualize=False):
-        """helper"""
-        jaccard_distance = lambda x, y: 1.0 - findletters.jaccard_index(x, y)
-        distances = []
-
-        ims = []
-
-        for word_im, positions_true in zip(word_ims_test, char_poss_test):
-            # positions_true = [x.data for x in word_im.result]
-            positions_pred = find_char_poss_func(word_im)
-            cur_distances, idxs = findletters.position_list_distance(
-                positions_true, positions_pred,
-                jaccard_distance)
-
-            if visualize:
-                # disp_im = _visualize_position_predictions(
-                #     word_im.data,
-                #     positions_true,
-                #     positions_pred,
-                #     idxs)
-
-                disp_im = _visualize_position_predictions_stacked(
-                    word_im,
-                    positions_true,
-                    positions_pred)
-
-                ims.append(disp_im)
-
-            distances.append(cur_distances)
-            print(".", end="", flush=True)
-
-        if visualize:
-            disp_im = _combine_word_images(ims, 1024, 8, 8)
-            cv2.namedWindow("positions", cv2.WINDOW_NORMAL)
-            cv2.imshow("positions", disp_im)
-            cv2.waitKey()
-
-        # mean overlap - higher is better
-        res = np.mean([1.0 - y for x in distances for y in x])
-        return res
-
-    return distance_test
 
 
 def _load_words(filenames):
@@ -614,6 +415,7 @@ def main(argv):
     do_balance = False
     balance_factor = 1024
     thresh_true = 0.5
+    max_epochs = 32
 
     # this one is the best !
     # train_filenames = data.pages([5, 6, 7, 9, 10, 11, 12])
@@ -725,13 +527,9 @@ def main(argv):
         distance_test = build_distance_test(word_ims_test, char_poss_test)
 
         if True:
+            # train a CNN
 
-            # CNN
-
-            # given the feature extractor that's being prepared inside the model training,
-            # prepare a callback for validating the model during training
-
-            # TODO: eventually load separate validation data to use instead of test data
+            # TODO: load separate validation data to use instead of test data
             data_validate = data_test
             labels_validate = labels_test
 
@@ -746,57 +544,71 @@ def main(argv):
                 distance_test
             )
 
-            proc = build_classification_process_cnn(
+            proc = imml.build_classification_process_cnn(
                 data_train,
                 labels_train,
-                pad_width=half_width * 2 - 8,
-                pad_height=pad_height,
-                start_row=start_row,
+                half_width * 2 - 8,
+                pad_height,
+                start_row,
+                batch_size=16,
+                max_epochs=max_epochs,
+                epoch_log_filename="log_charpos.txt",
                 prepare_callback=prepare_callback)
 
-            (classify_char_pos,
-             prep_image, feat_extractor,
-             classifier) = proc
-
         else:
-
             # traditional ML
 
-            proc = build_classification_process(
+            proc = imml.build_classification_process_charpos(
                 data_train,
                 labels_train,
-                pad_width=half_width * 2 - 8,
-                pad_height=pad_height,
-                start_row=start_row
-            )
+                half_width * 2 - 8,
+                pad_height,
+                start_row)
 
-            classify_char_pos, prep_image, feat_extractor, classifier = proc
+        classify_char_pos, prep_image, feat_extractor, classifier = proc
 
         print("done")
+
+        # summarize results
 
         feats_test = [feat_extractor(x) for x in data_test]
         labels_test_pred = [classifier(x) for x in feats_test]
 
-        print("accuracy score on test dataset:", sklearn.metrics.accuracy_score(
-            labels_test, labels_test_pred))
+        print(
+            "accuracy score on test dataset:",
+            sklearn.metrics.accuracy_score(
+                labels_test, labels_test_pred))
 
         print("confusion matrix:")
-        print(sklearn.metrics.confusion_matrix(
-            labels_test, labels_test_pred, [True, False]))
+        print(
+            sklearn.metrics.confusion_matrix(
+                labels_test, labels_test_pred, [True, False]))
 
+        # save model
+        util.save_dill(proc, model_filename)
+
+    if mode == MODE_TUNE:
+
+        # load model
+        proc = util.load_dill(model_filename)
+        classify_char_pos, prep_image, feat_extractor, classifier = proc
+
+        # predict on test data
+        feats_test = [feat_extractor(x) for x in data_test]
+        labels_test_pred = [classifier(x) for x in feats_test]
+
+        # calculate and visualize ROC AUC
         if False:
             # distances_test = model.decision_function(feats_test)
-            distances_test = classifier.model.predict_proba(feats_test)[:, 1]
-            fpr, tpr, _ = sklearn.metrics.roc_curve(
-                labels_test, distances_test)
+            # distances_test = classifier.model.predict_proba(feats_test)[:, 1]
+            distances_test = [classifier.predict_proba(x)[0, 1] for x in feats_test]
+            fpr, tpr, _ = sklearn.metrics.roc_curve(labels_test, distances_test)
             roc_auc = sklearn.metrics.auc(fpr, tpr)
             print("ROC AUC on test dataset:", roc_auc)
 
             if VISUALIZE:
-
                 # visualize ROC curve
                 from matplotlib import pyplot as plt
-
                 plt.figure()
                 plt.plot(
                     fpr, tpr, color="red",
@@ -810,24 +622,21 @@ def main(argv):
                 plt.legend(loc="lower right")
                 plt.show()
 
-                # visualize result images
+        if False and VISUALIZE:
+            # visualize result images
 
-                # labels_test_pred = classify_char_pos(data_test)
-                chars_confirmed = []
-                chars_redo = []
+            # labels_test_pred = classify_char_pos(data_test)
+            chars_confirmed = []
+            chars_redo = []
 
-                # show results
-                for cur_label, group in ml.group_by_label(data_test, labels_test_pred):
-                    print(cur_label)
-                    group_prepped = [(prep_image(x), None) for x in group]
-                    group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
-                    chars_working, chars_done = charclass.label_chars(group_pred)
-                    chars_confirmed += chars_working
-                    chars_redo += chars_done
-
-        util.save_dill(proc, model_filename)
-
-    if mode == MODE_TUNE:
+            # show results
+            for cur_label, group in ml.group_by_label(data_test, labels_test_pred):
+                print(cur_label)
+                group_prepped = [(prep_image(x), None) for x in group]
+                group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
+                chars_working, chars_done = charclass.label_chars(group_pred)
+                chars_confirmed += chars_working
+                chars_redo += chars_done
 
         # test different position finding methods using a distance function
         # on each word
@@ -836,9 +645,12 @@ def main(argv):
         word_ims_test, char_poss_test = _load_words(test_filenames)
         print("done")
 
-        distance_test = build_distance_test(word_ims_test[100:150], char_poss_test[100:150])
+        distance_test = build_distance_test(
+            word_ims_test[100:150],
+            char_poss_test[100:150])
 
         if False:
+            # test the old peak-finding and connected component methods
             def build_find_thresh_peaks(peak_sigma, mean_divisor):
                 """helper"""
                 return partial(
@@ -868,10 +680,6 @@ def main(argv):
                 findletters.find_thresh_peaks)
             score = distance_test(find_comp_peaks)
             print("connected components + peaks:", score)
-
-        # load ML model
-        proc = util.load_dill(model_filename)
-        classify_char_pos, prep_image, feat_extractor, classifier = proc
 
         def img_to_prob(img):
             """helper"""

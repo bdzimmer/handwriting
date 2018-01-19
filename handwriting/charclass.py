@@ -13,7 +13,8 @@ import pickle
 import cv2
 import numpy as np
 
-from handwriting import charclassml, util
+from handwriting import improc, util, ml
+from handwriting.prediction import Sample
 
 
 def label_chars(chars, width=16, height=8, border=True):
@@ -21,7 +22,6 @@ def label_chars(chars, width=16, height=8, border=True):
     """label and categorize character images with the mouse and keyboard"""
 
     # TODO: get rid of default parameters
-
     # TODO: optionally show the word image (second element of data tuple)
     # assumes the first part of the data tuples are bitmaps already padded to
     # the same size
@@ -127,7 +127,6 @@ def label_chars(chars, width=16, height=8, border=True):
             new_char[0] = chr(key & 0xFF)
             print("marking " + new_char[0])
 
-
         if type_mode:
             print(idx[0])
             pred = chars_working[idx[0]][0]
@@ -138,13 +137,22 @@ def label_chars(chars, width=16, height=8, border=True):
                 idx[0] = len(chars_working) - 1
             draw()
 
-
     chars_done = chars_done + [x for x in chars_working if x[1]]
     chars_working = [x for x in chars_working if not x[1]]
 
     cv2.destroyWindow("characters")
 
     return [x[0] for x in chars_working], [x[0] for x in chars_done]
+
+
+def visualize_training_data(data_train, labels_train, color_to_gray):
+    """visualize training data"""
+
+    for cur_label, group in ml.group_by_label(data_train, labels_train):
+        print("label:", cur_label)
+        group_prepped = [(color_to_gray(x), None) for x in group]
+        group_pred = [Sample(x, cur_label, 0.0, False) for x in group_prepped]
+        _ = label_chars(group_pred)
 
 
 def main():
@@ -156,7 +164,7 @@ def main():
     patch_width = 96
     patch_height = 96
 
-    pad = lambda x: charclassml.pad_image(x, patch_width, patch_height)
+    pad = lambda x: improc.pad_image(x, patch_width, patch_height)
 
     def pad_preds(preds):
         """helper"""

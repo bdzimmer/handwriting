@@ -15,11 +15,17 @@ import sys
 import numpy as np
 import sklearn
 
-from handwriting import charclassml as cml, util, charclass, ml, improc
+from handwriting import util, charclass, improc
+from handwriting import ml, imml
 from handwriting import data
 from handwriting.prediction import Sample
 
 VISUALIZE = False
+
+MODE_TRAIN = "train"
+MODE_TUNE = "tune"
+
+IGNORE_CHARS = ["~"]
 
 
 def _load_samples(filenames):
@@ -44,29 +50,57 @@ def _load_samples(filenames):
     return [x.result.data for x in char_poss], [x.result.result for x in char_poss]
 
 
+def build_prepare_callback(data_validate, labels_validate):
+
+    def prepare_callback(feat_extractor):
+        """given feature extractor, build callback to test the
+        network during training"""
+        feats_validate = [feat_extractor(x) for x in data_validate]
+
+        print("validation features size:", util.mbs(feats_validate), "MiB")
+
+        def callback(classifier):
+            """helper"""
+            print("predicting...", end="", flush=True)
+            labels_validate_pred = [classifier(x) for x in feats_validate]
+            print("done")
+
+            # TODO: something generic here instead of sklearn
+            accuracy = sklearn.metrics.accuracy_score(
+                labels_validate, labels_validate_pred)
+            print("validation accuracy:", accuracy)
+
+            return [0.0, 0.0, accuracy]
+
+        return callback
+
+    return prepare_callback
+
+
 def main(argv):
     """main program"""
 
     if len(argv) < 2:
-        mode = "tune"
+        mode = MODE_TUNE
     else:
         mode = argv[1]
 
+    # TODO: random seed for pytorch
     np.random.seed(0)
     random.seed(0)
 
     model_filename = "models/classify_characters.pkl"
+    pad_width = 96
+    pad_height = 96
+    start_row = 0
     min_label_examples = 1
-    # remove_labels = ["\"", "!", "/", "~"]
-    # remove_labels = ["~", "_", ":", "*"]
-    remove_labels = ["~"]
     do_destructive_prepare_balance = True
     do_balance = True
-    balance_factor = 1024 # 64 # 100
+    balance_factor = 1024
+    max_epochs = 32
 
-    # train_filenames, test_filenames = data.train_test_pages([5, 6])
-    train_filenames, test_filenames = data.pages([1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12], [8])
-    # train_filenames, test_filenames = data.pages([5, 6, 7, 9, 10, 11, 12], [8])
+    train_filenames = data.pages([1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12])
+    test_filenames = data.pages([8])
 
     print("loading and balancing datasets...")
 
@@ -80,7 +114,7 @@ def main(argv):
         data_train_unbalanced, labels_train_unbalanced))
     keep_labels = sorted(
         [x for x, y in train_gr.items()
-         if len(y) >= min_label_examples and x not in remove_labels])
+         if len(y) >= min_label_examples and x not in IGNORE_CHARS])
     print("keep labels:", keep_labels)
 
     train_grf = {x: y for x, y in train_gr.items() if x in keep_labels}
@@ -140,47 +174,44 @@ def main(argv):
         [(x[0], len(x[1]))
          for x in ml.group_by_label(data_test, labels_test)])
 
-    if mode == "train":
+    if mode == MODE_TRAIN:
 
         print("training model...")
 
-        def prepare_callback(feat_extractor, feat_selector):
-            """given feature extractor and feature selector functions,
-            build callbacks to test the network during training"""
-            feats_test = feat_selector([feat_extractor(x) for x in data_test])
+        if True:
+            # train a CNN
 
-            print("validation features size:", util.mbs(feats_test), "MiB")
+            # TODO: load separate validation data to use instead of test data
+            data_validate = data_test
+            labels_validate = labels_test
 
-            def callback(model):
-                """helper"""
-                print("predicting...", end="", flush=True)
-                labels_test_pred = [model([x])[0] for x in feats_test]
-                print("done")
+            prepare_callback = build_prepare_callback(data_validate, labels_validate)
 
-                # fpr, tpr, _ = sklearn.metrics.roc_curve(
-                #     labels_test, probs_true_pred)
-                # roc_auc = sklearn.metrics.auc(fpr, tpr)
-                # print("validation ROC AUC:", roc_auc)
+            proc = imml.build_classification_process_cnn(
+                data_train,
+                labels_train,
+                pad_width,
+                pad_height,
+                start_row,
+                batch_size=16,
+                max_epochs=max_epochs,
+                epoch_log_filename="log_charclass.txt",
+                prepare_callback=prepare_callback)
+        else:
+            # traditional ML
 
-                # TODO: something generic here instead of sklearn
-                accuracy = sklearn.metrics.accuracy_score(
-                    labels_test, labels_test_pred)
-                print("validation accuracy:", accuracy)
+            proc = imml.build_classification_process_charclass(
+                data_train,
+                labels_train,
+                pad_width,
+                pad_height,
+                start_row)
 
-                return [0.0, 0.0, accuracy]
-
-            return callback
-
-
-        proc = cml.build_current_best_process(
-            data_train, labels_train,
-            prepare_callback)
-
-        (classify_char_image,
-         prep_image, feat_extractor, feat_selector,
-         classifier) = proc
+        classify_char_image, prep_image, feat_extractor, classifier = proc
 
         print("done")
+
+        # summarize results
 
         # feats_test = feat_selector([feat_extractor(x) for x in data_test])
         # print("score on test dataset:", classify_char_image(feats_test, labels_test))
@@ -197,8 +228,6 @@ def main(argv):
             fmt="%d",
             delimiter="\t",
             header="\t".join(keep_labels))
-
-        # TODO: visualize ROC curves
 
         util.save_dill(proc, model_filename)
 
@@ -228,14 +257,16 @@ def main(argv):
 
             data_test_subset = [data_test[idx] for idx in keep_idxs]
             labels_test_subset = [labels_test[idx] for idx in keep_idxs]
-            labels_test_pred_subset = [classify_char_image([x])[0] for x in data_test_subset]
+            labels_test_pred_subset = [classify_char_image(x)
+                                       for x in data_test_subset]
 
             preds_grouped_counts = ml.group_by_label(
                 data_test_subset, labels_test_pred_subset)
 
             # print(labels_test_pred_subset)
 
-            score = sklearn.metrics.accuracy_score(labels_test_subset, labels_test_pred_subset)
+            score = sklearn.metrics.accuracy_score(
+                labels_test_subset, labels_test_pred_subset)
             print(
                 label, "\t", np.round(score, 3), "\t", len(keep_idxs), "\t",
                 [(x[0], len(x[1])) for x in reversed(preds_grouped_counts)])
