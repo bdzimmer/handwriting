@@ -415,7 +415,7 @@ def main(argv):
     do_balance = False
     balance_factor = 1024
     thresh_true = 0.5
-    max_epochs = 32
+    max_epochs = 16
 
     # this one is the best !
     # train_filenames = data.pages([5, 6, 7, 9, 10, 11, 12])

@@ -97,9 +97,9 @@ def main(argv):
     do_destructive_prepare_balance = True
     do_balance = True
     balance_factor = 1024
-    max_epochs = 32
+    max_epochs = 16
 
-    train_filenames = data.pages([1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12])
+    train_filenames = data.pages([0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12])
     test_filenames = data.pages([8])
 
     print("loading and balancing datasets...")
@@ -213,9 +213,7 @@ def main(argv):
 
         # summarize results
 
-        # feats_test = feat_selector([feat_extractor(x) for x in data_test])
-        # print("score on test dataset:", classify_char_image(feats_test, labels_test))
-        labels_test_pred = classify_char_image(data_test)
+        labels_test_pred = [classify_char_image(x) for x in data_test]
         print("score on test dataset:", sklearn.metrics.accuracy_score(labels_test, labels_test_pred))
 
         print("confusion matrix:")
@@ -232,7 +230,6 @@ def main(argv):
         util.save_dill(proc, model_filename)
 
         if VISUALIZE:
-            labels_test_pred = classify_char_image(data_test)
             chars_confirmed = []
             chars_redo = []
 

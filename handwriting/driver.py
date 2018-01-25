@@ -47,33 +47,24 @@ def current_best_process():
 
     half_width = 16
 
-    def classify_charpos_prob(im):
+    def classify_charpos_prob(img):
         # classifier = classify_charpos[0]
         feat_extractor = classify_charpos[2]
-        feat_selector = classify_charpos[3]
-        model = classify_charpos[4]
+        classifier = classify_charpos[3]
+        res = classifier.predict_proba(feat_extractor(img))
+        return res[0, 1]
 
-        # res = model.model.predict_proba(
-        #     feat_selector([feat_extractor(y) for y in im]))[:, 1]
-
-        res = model.predict_proba(
-            feat_selector([feat_extractor(y) for y in im]))
-        # probabilities are False, True in 1x2 tensor
-        # so [0, 1] is the True probability
-        res = [x[0, 1] for x in res]
-        return res
-
-    find_classify_prob = lambda x: findletters.find_classify_prob(
+    find_prob = lambda x: findletters.find_prob(
             x, half_width, extract_char, classify_charpos_prob, 0.5) # 0.2
 
-    classify_char = lambda x: classify_characters[0]([x])[0]
+    classify_char = lambda x: classify_characters[0](x)
 
     # find_char_poss_comps = lambda word_im: findletters.find_combine(
     #     word_im, extract_char,
     #     lambda x: findwords.find_conc_comp(x[16:-16, :], merge=True),
     #     find_classify_prob)
 
-    find_char_poss = find_classify_prob
+    find_char_poss = find_prob
 
     # put the pieces together
     process = build_process(
