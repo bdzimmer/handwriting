@@ -187,6 +187,8 @@ def annotate_letter_gaps(word_image, letter_gaps):
             disp_image,
             (int(disp_image.shape[1] * scale_factor), int(disp_image.shape[0] * scale_factor))))
 
+    mouse_x = [0]
+
     def on_mouse(event, x, y, flags, params):
         """helper"""
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -195,15 +197,16 @@ def annotate_letter_gaps(word_image, letter_gaps):
             lgaps.sort()
             draw()
             cv2.waitKey(1)
-        if event == cv2.EVENT_RBUTTONDOWN:
+        elif event == cv2.EVENT_RBUTTONDOWN:
             # find closest word
             lgap_idx = np.argmin([
-                math.fabs(x / scale_factor - lgap)
-                for lgap in lgaps])
+                math.fabs(x / scale_factor - lgap) for lgap in lgaps])
             # delete it
             lgaps.pop(lgap_idx)
             draw()
             cv2.waitKey(1)
+        elif event == cv2.EVENT_MOUSEMOVE:
+            mouse_x[0] = x
 
     cv2.namedWindow("letter gaps", cv2.WINDOW_NORMAL)
     cv2.setMouseCallback("letter gaps", on_mouse, 0)
@@ -211,7 +214,19 @@ def annotate_letter_gaps(word_image, letter_gaps):
 
     while True:
         key = cv2.waitKey(1)
-        if key == 27:
+
+        # z and c tweak the nearest gap back and forth
+        if key == ord("z") or key == ord("c"):
+            lgap_idx = np.argmin([
+                math.fabs(mouse_x[0] / scale_factor - lgap)
+                for lgap in lgaps])
+            if key == ord("z"):
+                lgaps[lgap_idx] -= 1
+            else:
+                lgaps[lgap_idx] += 1
+            draw()
+
+        if key == 27 or key == ord("x"):
             break
 
     cv2.destroyWindow("letter gaps")

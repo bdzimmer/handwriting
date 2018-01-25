@@ -64,7 +64,6 @@ def _verification_status_recursive(sample, verified=0, total=0):
     return verified, total
 
 
-
 def _mutate_recalculate_list(
         list_update, new_items, compare_func, calc_func):
     """update samples in a list, recalculating items that have changed"""
@@ -113,8 +112,6 @@ def _mutate_verify_line_poss(image_sample, process_line_position):
     for samp in image_sample.result: # verify line position samples
         samp.verified = True
 
-    cv2.destroyWindow("line analysis image")
-
 
 def _mutate_verify_multi(
         line_image_sample,
@@ -125,10 +122,12 @@ def _mutate_verify_multi(
     """open different annotation options depending on click location
     in line analysis image"""
 
+    window_title = "line analysis"
+
     def draw():
         """refresh the view"""
         lai = analysisimage.LineAnalysisImage(line_image_sample)
-        cv2.imshow("line analysis image", lai.image)
+        cv2.imshow(window_title, lai.image)
 
     def on_mouse(event, mouse_x, mouse_y, flags, params):
         """helper"""
@@ -249,8 +248,8 @@ def _mutate_verify_multi(
             print(mouse_x, mouse_y, "right")
             cv2.waitKey(1)
 
-    cv2.namedWindow("line analysis image", cv2.WINDOW_NORMAL)
-    cv2.setMouseCallback("line analysis image", on_mouse, 0)
+    cv2.namedWindow(window_title, cv2.WINDOW_NORMAL)
+    cv2.setMouseCallback(window_title, on_mouse, 0)
     draw()
 
     while True:
@@ -263,7 +262,7 @@ def _mutate_verify_multi(
             _mutate_set_verify_recursive(line_image_sample, False)
         draw()
 
-    cv2.destroyWindow("line analysis image")
+    cv2.destroyWindow(window_title)
 
 
 def main(argv):
@@ -315,7 +314,8 @@ def main(argv):
             cv2.imshow("line analysis", img)
             cv2.waitKey()
     else:
-        for line_pos in image_sample.result:
+        for idx, line_pos in enumerate(image_sample.result):
+            print("editing line " + str(idx + 1) + " / " + str(len(image_sample.result)))
             _mutate_verify_multi(
                 line_pos.result,
                 process_word_position, process_char_position,
