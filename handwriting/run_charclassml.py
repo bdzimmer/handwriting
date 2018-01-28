@@ -99,8 +99,11 @@ def main(argv):
     balance_factor = 1024
     max_epochs = 16
 
-    train_filenames = data.pages([0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12])
-    test_filenames = data.pages([8])
+    # train_filenames = data.pages([0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12])
+    # test_filenames = data.pages([8])
+
+    train_filenames = data.pages(range(15))
+    test_filenames = data.pages([15])
 
     print("loading and balancing datasets...")
 
