@@ -29,7 +29,8 @@ def build_classification_process_cnn(
         batch_size,
         max_epochs,
         epoch_log_filename,
-        prepare_callback):
+        prepare_callback,
+        save_model_filename):
 
     """build a classification process for images using a CNN"""
 
@@ -87,16 +88,17 @@ def build_classification_process_cnn(
         callback_log_filename=callback_log_filename,
         callback=callback,
         callback_rate=CALLBACK_RATE,
-        lazy_extractor=lazy_extractor
+        lazy_extractor=lazy_extractor,
+        save_model_filename=save_model_filename
     )(
         feats_train,
         labels_train
     )
 
-    classify_charpos_image = lambda image: classifier(feat_extractor(image))
+    classify_image = lambda image: classifier(feat_extractor(image))
 
     return (
-        classify_charpos_image,
+        classify_image,
         color_to_grayuint,
         feat_extractor,
         classifier)

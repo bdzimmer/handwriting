@@ -14,6 +14,7 @@ import sys
 
 import numpy as np
 import sklearn
+import torch
 
 from handwriting import util, charclass, improc
 from handwriting import ml, imml
@@ -88,6 +89,7 @@ def main(argv):
     # TODO: random seed for pytorch
     np.random.seed(0)
     random.seed(0)
+    torch.manual_seed(0)
 
     model_filename = "models/classify_characters.pkl"
     pad_width = 96
@@ -99,10 +101,7 @@ def main(argv):
     balance_factor = 1024
     max_epochs = 16
 
-    # train_filenames = data.pages([0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12])
-    # test_filenames = data.pages([8])
-
-    train_filenames = data.pages(range(15))
+    train_filenames = data.pages(range(5, 15))
     test_filenames = data.pages([15])
 
     print("loading and balancing datasets...")
@@ -147,9 +146,9 @@ def main(argv):
             balance_factor,
             partial(
                 improc.transform_random,
-                trans_size=2.0,
-                rot_size=0.3,
-                scale_size=0.1))
+                trans_size=[2.0, 12.0],
+                rot_size=0.4,
+                scale_size=0.2))
     else:
         data_train = data_train_unbalanced
         labels_train = labels_train_unbalanced
@@ -199,7 +198,8 @@ def main(argv):
                 batch_size=16,
                 max_epochs=max_epochs,
                 epoch_log_filename="log_charclass.txt",
-                prepare_callback=prepare_callback)
+                prepare_callback=prepare_callback,
+                save_model_filename=model_filename + ".wip")
         else:
             # traditional ML
 

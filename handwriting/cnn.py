@@ -18,6 +18,11 @@ from torch.nn import functional as F
 from torch.autograd import Variable
 from torch.utils.data import Dataset, DataLoader
 
+from handwriting import util
+
+VERBOSE = True
+VERBOSE_RATE = 100
+
 
 class ExperimentalCNN(nn.Module):
     """Convnet implemented with PyTorch."""
@@ -111,8 +116,6 @@ class CallableTorchModel(object):
 
     def __call__(self, img):
         """model becomes callable"""
-
-        # img = np.array(img, dtype=np.float32)
         img_var = Variable(
             torch.from_numpy(img[None, None, :, :]), requires_grad=True)
         output = self.model(img_var)
@@ -124,16 +127,10 @@ class CallableTorchModel(object):
         # TODO: probably name this something else
         # Eventually, I would rather achieve dynamic dispatch via polymorphic wrapper
         # functions rather than methods on classes
-
-        # img = np.array(img, dtype=np.float32)
         img = Variable(
             torch.from_numpy(img[None, None, :, :]), requires_grad=True)
         output = self.model(img)
         proba = nn.Softmax(dim=1)(output).data
-        # print("labels:", self.unique_labels)
-        # print("output:", output)
-        # print("proba:", proba)
-
         return proba
 
 
@@ -146,28 +143,29 @@ def experimental_cnn(
         callback_log_filename,
         callback,
         callback_rate,
-        lazy_extractor):
+        lazy_extractor,
+        save_model_filename):
 
     """Build a function that fits a CNN."""
 
     def fit(feats_train, labels_train):
         """Perform fitting."""
 
-        unique_labels = sorted(list(set(labels_train)))
-        label_map = {k: v for v, k in enumerate(unique_labels)}
-        n_classes = len(unique_labels)
-        # n_samples = len(feats_train)
-
         # assumes that all images are the same size and that at least
         # one training sample is passed in
         input_shape = feats_train[0].shape
 
+        unique_labels = sorted(list(set(labels_train)))
+        label_map = {k: v for v, k in enumerate(unique_labels)}
+        n_classes = len(unique_labels)
+
         net = ExperimentalCNN(input_shape, n_classes)
 
-        # in the example, learning rate was 0.001 and momentum was 0.9
         optimizer = optim.SGD(
             net.parameters(), lr=learning_rate, momentum=momentum)
         loss_func = nn.CrossEntropyLoss()
+
+        # open log files
 
         epoch_log_file = (
             open(epoch_log_filename, "w")
@@ -179,7 +177,7 @@ def experimental_cnn(
             if callback_log_filename is not None
             else None)
 
-        start_time = time.time()
+        # prepare data loader
 
         if lazy_extractor is None:
             dataloader = DataLoader(
@@ -191,6 +189,10 @@ def experimental_cnn(
                 ImagesDatasetLazy(feats_train, labels_train, lazy_extractor),
                 batch_size=batch_size,
                 shuffle=True)
+
+        # main training loop
+
+        start_time = time.time()
 
         for epoch in range(max_epochs):
 
@@ -206,6 +208,7 @@ def experimental_cnn(
                 targets = Variable(
                     torch.LongTensor(
                         [label_map[label] for label in labels]))
+
                 # zero the gradient buffers
                 optimizer.zero_grad()
                 # feedforward
@@ -218,31 +221,17 @@ def experimental_cnn(
                 epoch_loss += loss.data[0]
                 epoch_grad_magnitude += grad_magnitude(net)
 
-                if idx % 25 == 0:
-                    # minibatch losses are averaged rather than summed
-                    print(
-                        idx * batch_size,
-                        np.round(epoch_loss / (idx + 1), 6))
+                if VERBOSE:
+                    if idx % VERBOSE_RATE == 0:
+                        # minibatch losses are averaged rather than summed
+                        print(
+                             idx * batch_size,
+                             np.round(epoch_loss / (idx + 1), 6))
 
             mean_loss = epoch_loss / (idx + 1)
             mean_grad_magnitude = epoch_grad_magnitude / (idx + 1)
 
             running_time = time.time() - start_time
-            print(
-                "epoch", epoch, ":",
-                np.round(mean_loss, 6),
-                np.round(running_time, 2), "sec")
-
-            # estimate total time to complete max_epochs
-            frac_complete = (epoch + 1.0) / max_epochs
-            total_time_est = running_time / frac_complete
-            print(
-                "ETA:",
-                time.strftime(
-                    '%Y-%m-%d %H:%M:%S',
-                    time.localtime(start_time + total_time_est)),
-                "(" + str(np.round((1.0 - frac_complete) * total_time_est / 60, 2)) + " min remaining; " +
-                str(np.round(total_time_est / 60, 2)) + " min total)")
 
             if epoch_log_file is not None:
                 model = CallableTorchModel(net, unique_labels)
@@ -255,30 +244,47 @@ def experimental_cnn(
                 train_accuracy = sklearn.metrics.accuracy_score(
                     labels_train, labels_train_pred)
 
-                print(
-                    ", ".join(
-                        [str(x) for x in [
-                            epoch,
-                            mean_loss,
-                            mean_grad_magnitude,
-                            train_accuracy,
-                            running_time]]),
-                    file=epoch_log_file,
-                    flush=True)
+                log_line = ", ".join(
+                    [str(x) for x in [
+                        epoch,
+                        mean_loss,
+                        mean_grad_magnitude,
+                        train_accuracy,
+                        running_time]])
+                print(log_line)
+                print(log_line, file=epoch_log_file, flush=True)
 
             if callbacks_log_file is not None and (epoch + 1) % callback_rate == 0:
-                classifier = CallableTorchModel(net, unique_labels)
-                callback_results = callback(classifier)
-                print(
-                    ", ".join(
-                        [str(x) for x in (
-                            [epoch] + callback_results)]),
-                    file=callbacks_log_file,
-                    flush=True)
+                model = CallableTorchModel(net, unique_labels)
+                callback_results = callback(model)
+                callback_log_line = ", ".join(
+                    [str(x) for x in (
+                        [epoch] + callback_results)])
+                print(callback_log_line)
+                print(callback_log_line, file=callbacks_log_file, flush=True)
 
+            if save_model_filename is not None:
+                model = CallableTorchModel(net, unique_labels)
+                util.save(model, save_model_filename + "." + format(epoch, "03d"))
+
+            print(
+                "epoch", epoch, "/", max_epochs - 1, ":",
+                np.round(mean_loss, 6),
+                np.round(running_time, 2), "sec")
+            # estimate total time to complete max_epochs
+            frac_complete = (epoch + 1.0) / max_epochs
+            total_time_est = running_time / frac_complete
+            print(
+                "ETA:",
+                time.strftime(
+                    "%Y-%m-%d %H:%M:%S",
+                    time.localtime(start_time + total_time_est)),
+                "(" + str(np.round((1.0 - frac_complete) * total_time_est / 60, 2)) + " min remaining; " +
+                str(np.round(total_time_est / 60, 2)) + " min total)")
+
+        # close open log files
         if epoch_log_file is not None:
             epoch_log_file.close()
-
         if callbacks_log_file is not None:
             callbacks_log_file.close()
 
@@ -290,18 +296,7 @@ def experimental_cnn(
 def grad_magnitude(model):
     """calculate the magnitude of the current gradient of a model"""
     # use to check for vanishing / exploding gradient
-
     res = 0.0
-
-    # this is how SGD does it
-    # for group in optimizer.param_groups:
-    #     for p in group["params"]:
-    #         if p.grad is not None:
-    #             # not sure which one of these is more appropriate
-    #             # res += torch.norm(p.grad.data)
-    #             res += torch.sum(torch.abs(p.grad.data))
-
-    # this is simpler and seems to produce similar results
     for param in model.parameters():
         if param.grad is not None:
             res += torch.sum(torch.abs(param.grad.data))
