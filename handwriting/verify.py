@@ -314,7 +314,12 @@ def main(argv):
             cv2.imshow("line analysis", img)
             cv2.waitKey()
     else:
-        for idx, line_pos in enumerate(image_sample.result):
+        if len(argv) > 3:
+            start_idx = int(argv[3]) - 1
+        else:
+            start_idx = 0
+        for idx in range(start_idx, len(image_sample.result)):
+            line_pos = image_sample.result[idx]
             print("editing line " + str(idx + 1) + " / " + str(len(image_sample.result)))
             _mutate_verify_multi(
                 line_pos.result,
