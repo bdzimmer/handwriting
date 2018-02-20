@@ -1,0 +1,10 @@
+name: handwriting36
+dependencies:
+- python=3.6
+- attrs=15.2.0
+- scikit-learn=0.19.0
+- matplotlib=2.0.2
+- dill=0.2.6
+- coverage=4.4.1
+- pip:
+  - opencv_python-3.4.0-cp36-cp36m-win_amd64.whl
