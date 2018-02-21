@@ -544,6 +544,7 @@ def main(argv):
                 half_width * 2 - 8,
                 pad_height,
                 start_row,
+                do_align=False,
                 batch_size=16,
                 max_epochs=max_epochs,
                 epoch_log_filename="log_charpos.txt",

@@ -19,6 +19,7 @@ import torch
 from handwriting import util, charclass, improc
 from handwriting import ml, imml
 from handwriting import data
+from handwriting.func import pipe
 from handwriting.prediction import Sample
 
 VISUALIZE = False
@@ -86,7 +87,6 @@ def main(argv):
     else:
         mode = argv[1]
 
-    # TODO: random seed for pytorch
     np.random.seed(0)
     random.seed(0)
     torch.manual_seed(0)
@@ -140,15 +140,18 @@ def main(argv):
 
     if do_balance:
         # balance classes in training set
+        pad_image = partial(improc.pad_image, width=pad_width, height=pad_height)
         data_train, labels_train = ml.balance(
             data_train_unbalanced,
             labels_train_unbalanced,
             balance_factor,
-            partial(
-                improc.transform_random,
-                trans_size=[2.0, 12.0],
-                rot_size=0.4,
-                scale_size=0.2))
+            pipe(
+                pad_image,  # pad before rotations
+                partial(
+                    improc.transform_random,
+                    trans_size=[0.0, 0.0],
+                    rot_size=0.5,
+                    scale_size=0.1)))
     else:
         data_train = data_train_unbalanced
         labels_train = labels_train_unbalanced
@@ -195,6 +198,7 @@ def main(argv):
                 pad_width,
                 pad_height,
                 start_row,
+                do_align=True,
                 batch_size=16,
                 max_epochs=max_epochs,
                 epoch_log_filename="log_charclass.txt",

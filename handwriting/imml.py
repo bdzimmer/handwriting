@@ -26,6 +26,7 @@ def build_classification_process_cnn(
         pad_width,
         pad_height,
         start_row,
+        do_align,
         batch_size,
         max_epochs,
         epoch_log_filename,
@@ -37,7 +38,12 @@ def build_classification_process_cnn(
     # TODO: do I pull out all the feature extractors or flatten the configuration?
     # I'm more inclined to flatten the configuration for this approach.
 
-    pad_image = partial(improc.pad_image, width=pad_width, height=pad_height)
+    pad_only = partial(improc.pad_image, width=pad_width, height=pad_height)
+
+    if do_align:
+        pad_image = lambda x: improc.align(pad_only(x))
+    else:
+        pad_image = pad_only
 
     def color_to_grayuint(image):
         """prepare image to uint8"""
@@ -54,7 +60,7 @@ def build_classification_process_cnn(
     if VISUALIZE:
         charclass.visualize_training_data(data_train, labels_train, color_to_grayuint)
 
-    feat_extractor = func.pipe(pad_image, color_to_grayuint, grayuint_to_grayfloat)
+    feat_extractor = func.pipe(color_to_grayuint, grayuint_to_grayfloat)
 
     print("preparing callback...", end="", flush=True)
     callback = prepare_callback(feat_extractor)
@@ -64,7 +70,7 @@ def build_classification_process_cnn(
         feats_train = [feat_extractor(x) for x in data_train]
         lazy_extractor = None
     else:
-        feats_train = [color_to_grayuint(pad_image(x)) for x in data_train]
+        feats_train = [color_to_grayuint(x) for x in data_train]
         del data_train
         gc.collect()
         lazy_extractor = grayuint_to_grayfloat
