@@ -442,6 +442,12 @@ def main(argv):
     else:
         model_filename = argv[3]
 
+    print("run_charposml")
+    print("---------------")
+    cf.pretty_print(config)
+    print("mode:", mode)
+    print("model filename:", model_filename)
+
     np.random.seed(0)
     random.seed(0)
     torch.manual_seed(0)

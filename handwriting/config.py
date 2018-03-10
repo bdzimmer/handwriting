@@ -32,5 +32,5 @@ def pretty_print(obj):
 
     for field in fields:
         print(
-            field.name + ":" + (max_name_length - len(field.name) * " "),
+            field.name + ":" + (max_name_length - len(field.name)) * " ",
             obj_dict[field.name])
