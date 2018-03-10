@@ -22,3 +22,15 @@ def load(cls, input_filename):
     with open(input_filename, "r") as input_file:
         obj_dict = json.load(input_file)
     return cls(**obj_dict)
+
+
+def pretty_print(obj):
+    """pretty print an attrs object"""
+    obj_dict = attr.asdict(obj)
+    fields = list(attr.fields(obj.__class__))
+    max_name_length = max([len(x.name) for x in fields])
+
+    for field in fields:
+        print(
+            field.name + ":" + (max_name_length - len(field.name) * " "),
+            obj_dict[field.name])

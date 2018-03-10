@@ -12,13 +12,14 @@ import gc
 import random
 import sys
 
+import attr
 import numpy as np
 import sklearn
 import torch
 
 from handwriting import util, charclass, improc
 from handwriting import ml, imml
-from handwriting import data
+from handwriting import data, config as cf
 from handwriting.func import pipe
 from handwriting.prediction import Sample
 
@@ -28,6 +29,34 @@ MODE_TRAIN = "train"
 MODE_TUNE = "tune"
 
 IGNORE_CHARS = ["~"]
+
+
+@attr.s
+class Config:
+    pad_width = attr.ib()
+    pad_height = attr.ib()
+    start_row = attr.ib()
+    do_balance = attr.ib()
+    balance_factor = attr.ib()
+    do_align = attr.ib()
+    batch_size = attr.ib()
+    max_epochs = attr.ib()
+    train_idxs = attr.ib()
+    test_idxs = attr.ib()
+
+
+CONFIG_DEFAULT = Config(
+    pad_width=96,
+    pad_height=96,
+    start_row=0,
+    do_balance=True,
+    balance_factor=1024,
+    do_align=True,
+    batch_size=16,
+    max_epochs=16,
+    train_idxs=list(range(5, 15)),
+    test_idxs=[15]
+)
 
 
 def _load_samples(filenames):
@@ -87,22 +116,25 @@ def main(argv):
     else:
         mode = argv[1]
 
+    if len(argv) < 3:
+        config = CONFIG_DEFAULT
+    else:
+        config = cf.load(Config, argv[2])
+
+    if len(argv) < 4:
+        model_filename = "models/classify_characters.pkl"
+    else:
+        model_filename = argv[3]
+
     np.random.seed(0)
     random.seed(0)
     torch.manual_seed(0)
 
-    model_filename = "models/classify_characters.pkl"
-    pad_width = 96
-    pad_height = 96
-    start_row = 0
     min_label_examples = 1
     do_destructive_prepare_balance = True
-    do_balance = True
-    balance_factor = 1024
-    max_epochs = 16
 
-    train_filenames = data.pages(range(5, 15))
-    test_filenames = data.pages([15])
+    train_filenames = data.pages(config.train_idxs)
+    test_filenames = data.pages(config.test_idxs)
 
     print("loading and balancing datasets...")
 
@@ -132,19 +164,22 @@ def main(argv):
     if do_destructive_prepare_balance:
         print("destructively prepping training data for balancing")
         data_train_unbalanced, labels_train_unbalanced = ml.prepare_balance(
-            data_train_unbalanced, labels_train_unbalanced, balance_factor)
+            data_train_unbalanced, labels_train_unbalanced, config.balance_factor)
         gc.collect()
 
     print("prepared training data size:", util.mbs(data_train_unbalanced), "MiB")
     print()
 
-    if do_balance:
+    if config.do_balance:
         # balance classes in training set
-        pad_image = partial(improc.pad_image, width=pad_width, height=pad_height)
+        pad_image = partial(
+            improc.pad_image,
+            width=config.pad_width,
+            height=config.pad_height)
         data_train, labels_train = ml.balance(
             data_train_unbalanced,
             labels_train_unbalanced,
-            balance_factor,
+            config.balance_factor,
             pipe(
                 pad_image,  # pad before rotations
                 partial(
@@ -195,13 +230,13 @@ def main(argv):
             proc = imml.build_classification_process_cnn(
                 data_train,
                 labels_train,
-                pad_width,
-                pad_height,
-                start_row,
-                do_align=True,
-                batch_size=16,
-                max_epochs=max_epochs,
-                epoch_log_filename="log_charclass.txt",
+                config.pad_width,
+                config.pad_height,
+                config.start_row,
+                do_align=config.do_align,
+                batch_size=config.batch_size,
+                max_epochs=config.max_epochs,
+                epoch_log_filename=model_filename + ".log.txt",
                 prepare_callback=prepare_callback,
                 save_model_filename=model_filename + ".wip")
         else:
@@ -210,9 +245,9 @@ def main(argv):
             proc = imml.build_classification_process_charclass(
                 data_train,
                 labels_train,
-                pad_width,
-                pad_height,
-                start_row)
+                config.pad_width,
+                config.pad_height,
+                config.start_row)
 
         classify_char_image, prep_image, feat_extractor, classifier = proc
 

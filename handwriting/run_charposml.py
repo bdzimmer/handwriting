@@ -13,6 +13,7 @@ import gc
 import random
 import sys
 
+import attr
 import cv2
 import numpy as np
 import sklearn
@@ -21,7 +22,7 @@ import torch
 from handwriting import util, charclass, func, improc
 from handwriting import ml, imml
 from handwriting import findletters, findwords
-from handwriting import data
+from handwriting import data, config as cf
 from handwriting.prediction import Sample
 
 VISUALIZE = True
@@ -31,6 +32,34 @@ MODE_TRAIN = "train"
 MODE_TUNE = "tune"
 
 IGNORE_CHARS = []
+
+
+@attr.s
+class Config:
+    half_width = attr.ib()
+    pad_height = attr.ib()
+    start_row = attr.ib()
+    offset = attr.ib()
+    do_balance = attr.ib()
+    balance_factor = attr.ib()
+    batch_size = attr.ib()
+    max_epochs = attr.ib()
+    train_idxs = attr.ib()
+    test_idxs = attr.ib()
+
+
+CONFIG_DEFAULT = Config(
+    half_width=16,
+    pad_height=96,
+    start_row=0,
+    offset=0,
+    do_balance=False,
+    balance_factor=1024,
+    batch_size=16,
+    max_epochs=16,
+    train_idxs=list(range(5, 15)),
+    test_idxs=[15]
+)
 
 
 def build_distance_test(word_ims_test, char_poss_test):
@@ -403,24 +432,25 @@ def main(argv):
     else:
         mode = argv[1]
 
-    # TODO: random seed for pytorch
+    if len(argv) < 3:
+        config = CONFIG_DEFAULT
+    else:
+        config = cf.load(Config, argv[2])
+
+    if len(argv) < 4:
+        model_filename = "models/classify_characters.pkl"
+    else:
+        model_filename = argv[3]
+
     np.random.seed(0)
     random.seed(0)
     torch.manual_seed(0)
 
-    model_filename = "models/classify_charpos.pkl"
-    half_width = 16
-    pad_height = 96
-    start_row = 0
-    offset = 0
     do_destructive_prepare_balance = True
-    do_balance = False
-    balance_factor = 1024
     thresh_true = 0.5
-    max_epochs = 16
 
-    train_filenames = data.pages(range(5, 15))
-    test_filenames = data.pages([15])
+    train_filenames = data.pages(config.train_idxs)
+    test_filenames = data.pages(config.test_idxs)
 
     # for integration testing
     # train_filenames = data.pages([5, 6, 7])
@@ -433,7 +463,7 @@ def main(argv):
 
     # load training set
     data_train_unbalanced, labels_train_unbalanced = _load_samples(
-        train_filenames, half_width, offset)
+        train_filenames, config.half_width, config.offset)
 
     print(
         "unbalanced training data size:",
@@ -449,7 +479,7 @@ def main(argv):
     if do_destructive_prepare_balance:
         print("destructively prepping training data for balancing")
         data_train_unbalanced, labels_train_unbalanced = ml.prepare_balance(
-            data_train_unbalanced, labels_train_unbalanced, balance_factor)
+            data_train_unbalanced, labels_train_unbalanced, config.balance_factor)
         gc.collect()
 
     print(
@@ -457,11 +487,11 @@ def main(argv):
         util.mbs(data_train_unbalanced), "MiB")
     print()
 
-    if do_balance:
+    if config.do_balance:
         # balance classes in training set
         data_train, labels_train = ml.balance(
             data_train_unbalanced, labels_train_unbalanced,
-            balance_factor,
+            config.balance_factor,
             lambda x: x
             # partial(
             #     improc.transform_random,
@@ -477,7 +507,8 @@ def main(argv):
     print("training data size:", util.mbs(data_train), "MiB")
 
     # load test set
-    data_test, labels_test = _load_samples(test_filenames, half_width, offset)
+    data_test, labels_test = _load_samples(
+        test_filenames, config.half_width, config.offset)
     data_test, labels_test = ml.sort_by_label(data_test, labels_test)
 
     print("test data size:    ", util.mbs(data_test), "MiB")
@@ -529,7 +560,7 @@ def main(argv):
 
             def build_find_prob(img_to_prob):
                 return lambda word_im: findletters.find_prob(
-                    word_im, half_width, extract_char, img_to_prob, thresh_true)
+                    word_im, config.half_width, extract_char, img_to_prob, thresh_true)
 
             prepare_callback = build_prepare_validation_callback(
                 data_validate,
@@ -541,13 +572,13 @@ def main(argv):
             proc = imml.build_classification_process_cnn(
                 data_train,
                 labels_train,
-                half_width * 2 - 8,
-                pad_height,
-                start_row,
+                config.half_width * 2 - 8,
+                config.pad_height,
+                config.start_row,
                 do_align=False,
-                batch_size=16,
-                max_epochs=max_epochs,
-                epoch_log_filename="log_charpos.txt",
+                batch_size=config.batch_size,
+                max_epochs=config.max_epochs,
+                epoch_log_filename=model_filename + ".log.txt",
                 prepare_callback=prepare_callback,
                 save_model_filename=model_filename + ".wip")
 
@@ -557,9 +588,9 @@ def main(argv):
             proc = imml.build_classification_process_charpos(
                 data_train,
                 labels_train,
-                half_width * 2 - 8,
-                pad_height,
-                start_row)
+                config.half_width * 2 - 8,
+                config.pad_height,
+                config.start_row)
 
         classify_char_pos, prep_image, feat_extractor, classifier = proc
 
@@ -696,7 +727,7 @@ def main(argv):
 
         for thresh in [0.5, 0.6, 0.7]:  # [0.0, 0.2, 0.4, 0.6, 0.7, 0.8, 0.9, 1.0]:
             find_prob = lambda word_im: findletters.find_prob(
-                word_im, half_width, extract_char, img_to_prob, thresh)
+                word_im, config.half_width, extract_char, img_to_prob, thresh)
             score = distance_test(find_prob, False)
             print("ML (", thresh, ") :", score)
 
