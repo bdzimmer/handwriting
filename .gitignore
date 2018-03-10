@@ -1,6 +1,7 @@
 *.pyc
 .idea
 .Rproj.user
-.coverage
 .RData
 .Rhistory
+.coverage
+htmlcov
