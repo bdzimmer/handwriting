@@ -31,7 +31,8 @@ def build_classification_process_cnn(
         max_epochs,
         epoch_log_filename,
         prepare_callback,
-        save_model_filename):
+        save_model_filename,
+        tsv_filename):
 
     """build a classification process for images using a CNN"""
 
@@ -86,16 +87,17 @@ def build_classification_process_cnn(
         callback_log_filename = None
 
     classifier = cnn.experimental_cnn(
-        batch_size=batch_size,  # 16
+        batch_size=batch_size,
         max_epochs=max_epochs,
         learning_rate=0.001,
         momentum=0.9,
-        epoch_log_filename=epoch_log_filename, # "log_charpos.txt",
+        epoch_log_filename=epoch_log_filename,
         callback_log_filename=callback_log_filename,
         callback=callback,
         callback_rate=CALLBACK_RATE,
         lazy_extractor=lazy_extractor,
-        save_model_filename=save_model_filename
+        save_model_filename=save_model_filename,
+        tsv_filename=tsv_filename
     )(
         feats_train,
         labels_train

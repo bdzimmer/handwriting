@@ -144,7 +144,8 @@ def experimental_cnn(
         callback,
         callback_rate,
         lazy_extractor,
-        save_model_filename):
+        save_model_filename,
+        tsv_filename):
 
     """Build a function that fits a CNN."""
 
@@ -233,6 +234,8 @@ def experimental_cnn(
 
             running_time = time.time() - start_time
 
+            status = {}
+
             if epoch_log_file is not None:
                 model = CallableTorchModel(net, unique_labels)
 
@@ -254,18 +257,32 @@ def experimental_cnn(
                 print(log_line)
                 print(log_line, file=epoch_log_file, flush=True)
 
+                status["epoch"] = epoch
+                status["mean_loss"] = mean_loss
+                status["mean_grad_magnitude"] = mean_grad_magnitude
+                status["train_accuracy"] = train_accuracy
+                status["running_time"] = running_time
+
             if callbacks_log_file is not None and (epoch + 1) % callback_rate == 0:
                 model = CallableTorchModel(net, unique_labels)
                 callback_results = callback(model)
                 callback_log_line = ", ".join(
-                    [str(x) for x in (
-                        [epoch] + callback_results)])
+                    [str(x[1]) for x in (
+                        [("epoch", epoch)] + callback_results)])
                 print(callback_log_line)
                 print(callback_log_line, file=callbacks_log_file, flush=True)
+                for key, val in callback_results:
+                    status[key] = val
 
             if save_model_filename is not None:
                 model = CallableTorchModel(net, unique_labels)
                 util.save(model, save_model_filename + "." + format(epoch, "03d"))
+
+            # save tsv file of status
+            if tsv_filename is not None:
+                with open(tsv_filename + "." + format(epoch, "03d"), "w") as tsv_file:
+                    for key, val in status:
+                        print(key + "\t" + str(val), file=tsv_file)
 
             print(
                 "epoch", epoch, "/", max_epochs - 1, ":",

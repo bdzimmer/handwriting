@@ -101,7 +101,10 @@ def build_prepare_callback(data_validate, labels_validate):
                 labels_validate, labels_validate_pred)
             print("validation accuracy:", accuracy)
 
-            return [0.0, 0.0, accuracy]
+            return [
+                ("nothing", 0.0),
+                ("nothing", 0.0),
+                ("val_accuracy", accuracy)]
 
         return callback
 
@@ -244,7 +247,8 @@ def main(argv):
                 max_epochs=config.max_epochs,
                 epoch_log_filename=model_filename + ".log.txt",
                 prepare_callback=prepare_callback,
-                save_model_filename=model_filename + ".wip")
+                save_model_filename=model_filename + ".wip",
+                tsv_filename=model_filename + ".status")
         else:
             # traditional ML
 
