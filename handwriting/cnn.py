@@ -281,7 +281,7 @@ def experimental_cnn(
             # save tsv file of status
             if tsv_filename is not None:
                 with open(tsv_filename + "." + format(epoch, "03d"), "w") as tsv_file:
-                    for key, val in status:
+                    for key, val in status.items():
                         print(key + "\t" + str(val), file=tsv_file)
 
             print(
