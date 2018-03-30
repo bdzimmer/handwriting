@@ -23,6 +23,7 @@ from handwriting import util, charclass, func, improc
 from handwriting import ml, imml
 from handwriting import findletters, findwords
 from handwriting import data, config as cf
+from handwriting.func import pipe
 from handwriting.prediction import Sample
 
 VISUALIZE = True
@@ -42,6 +43,10 @@ class Config:
     offset = attr.ib()
     do_balance = attr.ib()
     balance_factor = attr.ib()
+    trans_x_size = attr.ib()
+    trans_y_size = attr.ib()
+    rot_size = attr.ib()
+    scale_size = attr.ib()
     batch_size = attr.ib()
     max_epochs = attr.ib()
     train_idxs = attr.ib()
@@ -55,6 +60,10 @@ CONFIG_DEFAULT = Config(
     offset=0,
     do_balance=False,
     balance_factor=1024,
+    trans_x_size=0.0,
+    trans_y_size=0.0,
+    rot_size=0.0,
+    scale_size=0.0,
     batch_size=16,
     max_epochs=16,
     train_idxs=list(range(5, 15)),
@@ -497,18 +506,22 @@ def main(argv):
     print()
 
     if config.do_balance:
+        pad_image = partial(
+            improc.pad_image,
+            width=config.half_width * 2,
+            height=config.pad_height)
         # balance classes in training set
         data_train, labels_train = ml.balance(
             data_train_unbalanced, labels_train_unbalanced,
             config.balance_factor,
-            lambda x: x
-            # partial(
-            #     improc.transform_random,
-            #     trans_size=[0.0, 12.0],
-            #     rot_size=0.25,    # 0.2
-            #     scale_size=0.25  # 0.1
-            # )
-        )
+            # lambda x: x
+            pipe(
+                pad_image,  # pad before rotations
+                partial(
+                    improc.transform_random,
+                    trans_size=[config.trans_x_size, config.trans_y_size],
+                    rot_size=config.rot_size,
+                    scale_size=config.scale_size)))
     else:
         data_train = data_train_unbalanced
         labels_train = labels_train_unbalanced
