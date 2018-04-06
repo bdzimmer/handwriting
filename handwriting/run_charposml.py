@@ -450,7 +450,7 @@ def main(argv):
         config = cf.load(Config, argv[2])
 
     if len(argv) < 4:
-        model_filename = "models/classify_characters.pkl"
+        model_filename = "models/classify_charpos.pkl"
     else:
         model_filename = argv[3]
 

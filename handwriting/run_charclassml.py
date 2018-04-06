@@ -38,6 +38,10 @@ class Config:
     start_row = attr.ib()
     do_balance = attr.ib()
     balance_factor = attr.ib()
+    trans_x_size = attr.ib()
+    trans_y_size = attr.ib()
+    rot_size = attr.ib()
+    scale_size = attr.ib()
     do_align = attr.ib()
     batch_size = attr.ib()
     max_epochs = attr.ib()
@@ -51,6 +55,10 @@ CONFIG_DEFAULT = Config(
     start_row=0,
     do_balance=True,
     balance_factor=1024,
+    trans_x_size=0.0,
+    trans_y_size=0.0,
+    rot_size=0.0,
+    scale_size=0.0,
     do_align=True,
     batch_size=16,
     max_epochs=16,
@@ -193,9 +201,9 @@ def main(argv):
                 pad_image,  # pad before rotations
                 partial(
                     improc.transform_random,
-                    trans_size=[0.0, 0.0],
-                    rot_size=0.5,
-                    scale_size=0.1)))
+                    trans_size=[config.trans_x_size, config.trans_y_size],
+                    rot_size=config.rot_size,
+                    scale_size=config.scale_size)))
     else:
         data_train = data_train_unbalanced
         labels_train = labels_train_unbalanced
