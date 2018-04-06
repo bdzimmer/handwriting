@@ -305,6 +305,15 @@ def group_by_label(samples, labels):
     return [res_unsorted[idx] for idx in order]
 
 
+def label_counts(labels):
+    """count occurences of each label"""
+    unique_labels = sorted(list(set(labels)))
+    counts = {k: 0 for k in unique_labels}
+    for label in labels:
+        counts[label] += 1
+    return [(label, counts[label]) for label in unique_labels], counts
+
+
 def sort_by_label(samples, labels):
     """group and sort samples for easier visualization"""
 

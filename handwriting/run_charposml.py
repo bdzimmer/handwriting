@@ -27,7 +27,6 @@ from handwriting.func import pipe
 from handwriting.prediction import Sample
 
 VISUALIZE = True
-VERBOSE = False
 
 MODE_TRAIN = "train"
 MODE_TUNE = "tune"
@@ -487,12 +486,10 @@ def main(argv):
         "unbalanced training data size:",
         util.mbs(data_train_unbalanced), "MiB")
 
-    if VERBOSE:
-        print(
-            "training group sizes before balancing:",
-            [(x[0], len(x[1]))
-             for x in ml.group_by_label(
-             data_train_unbalanced, labels_train_unbalanced)])
+    train_unbalanced_counts = ml.label_counts(labels_train_unbalanced)
+    print(
+        "training group sizes before balancing:",
+        train_unbalanced_counts[0])
 
     if do_destructive_prepare_balance:
         print("destructively prepping training data for balancing")
@@ -526,43 +523,50 @@ def main(argv):
         data_train = data_train_unbalanced
         labels_train = labels_train_unbalanced
 
-    print("training data size:", util.mbs(data_train), "MiB")
-
     # load test set
     data_test, labels_test = _load_samples(
         test_filenames, config.half_width, config.offset)
     data_test, labels_test = ml.sort_by_label(data_test, labels_test)
 
-    print("test data size:    ", util.mbs(data_test), "MiB")
+    print("done")
 
+    print("training data size:", util.mbs(data_train), "MiB")
+    print("test data size:    ", util.mbs(data_test), "MiB")
     print("training count:    ", len(data_train))
     print("test count:        ", len(data_test))
     print()
 
-    print("done")
+    train_counts = ml.label_counts(labels_train)
+    print(
+        "training group sizes:",
+        train_counts[0])
+    print()
+    test_counts = ml.label_counts(labels_test)
+    print(
+        "test group sizes:",
+        test_counts[0])
+    print()
 
-    if VERBOSE:
-        print(
-            "training group sizes:",
-            [(x[0], len(x[1]))
-             for x in ml.group_by_label(data_train, labels_train)])
-        print(
-            "test group sizes:",
-            [(x[0], len(x[1]))
-             for x in ml.group_by_label(data_test, labels_test)])
+    print("training group sizes change in balancing:")
+    for x, y in train_unbalanced_counts[0]:
+        print(x, round(train_counts[1][x] / y, 3))
+    print()
 
     print("discarding letter information from labels")
+    print()
     labels_train = [x[0] for x in labels_train]
     labels_test = [x[0] for x in labels_test]
 
+    train_counts = ml.label_counts(labels_train)
     print(
         "training group sizes:",
-        [(x[0], len(x[1]))
-         for x in ml.group_by_label(data_train, labels_train)])
+        train_counts[0])
+    print()
+    test_counts = ml.label_counts(labels_test)
     print(
         "test group sizes:",
-        [(x[0], len(x[1]))
-         for x in ml.group_by_label(data_test, labels_test)])
+        test_counts[0])
+    print()
 
     extract_char = improc.extract_pos
 

@@ -173,10 +173,13 @@ def main(argv):
         (y, x[0]) for x in train_grf.items() for y in x[1]])
 
     print(
+        "unbalanced training data size:",
+        util.mbs(data_train_unbalanced), "MiB")
+
+    train_unbalanced_counts = ml.label_counts(labels_train_unbalanced)
+    print(
         "training group sizes before balancing:",
-        [(x[0], len(x[1]))
-         for x in ml.group_by_label(
-             data_train_unbalanced, labels_train_unbalanced)])
+        train_unbalanced_counts[0])
 
     if do_destructive_prepare_balance:
         print("destructively prepping training data for balancing")
@@ -184,7 +187,9 @@ def main(argv):
             data_train_unbalanced, labels_train_unbalanced, config.balance_factor)
         gc.collect()
 
-    print("prepared training data size:", util.mbs(data_train_unbalanced), "MiB")
+    print(
+        "prepared training data size:",
+        util.mbs(data_train_unbalanced), "MiB")
     print()
 
     if config.do_balance:
@@ -218,18 +223,27 @@ def main(argv):
 
     print("done")
 
-    print("training size:", len(data_train))
-    print("test size:", len(data_test))
+    print("training data size:", util.mbs(data_train), "MiB")
+    print("test data size:    ", util.mbs(data_test), "MiB")
+    print("training count:    ", len(data_train))
+    print("test count:        ", len(data_test))
+    print()
 
+    train_counts = ml.label_counts(labels_train)
     print(
         "training group sizes:",
-        [(x[0], len(x[1]))
-         for x in ml.group_by_label(data_train, labels_train)])
-
+        train_counts[0])
+    print()
+    test_counts = ml.label_counts(labels_test)
     print(
         "test group sizes:",
-        [(x[0], len(x[1]))
-         for x in ml.group_by_label(data_test, labels_test)])
+        test_counts[0])
+    print()
+
+    print("training group sizes change in balancing:")
+    for x, y in train_unbalanced_counts[0]:
+        print(x, round(train_counts[1][x] / y, 3))
+    print()
 
     if mode == MODE_TRAIN:
 
