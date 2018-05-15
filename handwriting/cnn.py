@@ -33,20 +33,20 @@ class ExperimentalCNN(nn.Module):
 
         conv0_input_height, conv0_input_width = input_shape
 
-        conv0_kernel_hwidth = 2
-        conv1_kernel_hwidth = 2
+        conv0_kernel_hwidth = 4  # 4 # 4  # 2
+        conv1_kernel_hwidth = 2  # 4 # 2  # 2
 
-        conv0_output_channels = 4
-        conv1_output_channels = 8
+        conv0_output_channels = 16  # 4 # 2  # 4
+        conv1_output_channels = 16  # 4 # 2  # 8
 
-        linear_size = 256
+        linear0_size = 256  # 64 # 256
+        linear1_size = 128
 
         # conv2d args are in channels, out channels, kernel size
         self.conv0 = nn.Conv2d(
             1,
             conv0_output_channels,
             conv0_kernel_hwidth * 2 + 1)
-
         conv0_output_height = conv0_input_height - 2 * conv0_kernel_hwidth
         conv0_output_width = conv0_input_width - 2 * conv0_kernel_hwidth
 
@@ -54,27 +54,41 @@ class ExperimentalCNN(nn.Module):
         conv1_input_height = conv0_output_height // 2
         conv1_input_width = conv0_output_width // 2
 
+        # no max pool
+        # conv1_input_height = conv0_output_height
+        # conv1_input_width = conv0_output_width
+
         self.conv1 = nn.Conv2d(
             conv0_output_channels,
             conv1_output_channels,
             conv1_kernel_hwidth * 2 + 1)
-
         conv1_output_height = conv1_input_height - 2 * conv1_kernel_hwidth
         conv1_output_width = conv1_input_width - 2 * conv1_kernel_hwidth
 
         # max pool
         self.fc0_input_size = (conv1_output_height // 2) * (conv1_output_width // 2) * conv1_output_channels
 
-        self.fc0 = nn.Linear(self.fc0_input_size, linear_size)
-        self.fc1 = nn.Linear(linear_size, n_classes)
+        # no max pool
+        # self.fc0_input_size = conv1_output_height * conv1_output_width * conv1_output_channels
+        # self.fc0_input_size = conv2_output_height * conv2_output_width * conv2_output_channels
+
+        self.fc0 = nn.Linear(self.fc0_input_size, linear0_size)
+        self.fc1 = nn.Linear(linear0_size, linear1_size)
+        self.fc2 = nn.Linear(linear1_size, n_classes)
 
     def forward(self, x):
         """feed forward"""
         x = F.max_pool2d(F.relu(self.conv0(x)), 2)
         x = F.max_pool2d(F.relu(self.conv1(x)), 2)
+
+        # x = F.relu(self.conv0(x))
+        # x = F.relu(self.conv1(x))
+        # x = F.relu(self.conv2(x))
+
         x = x.view(-1, self.fc0_input_size)
         x = F.relu(self.fc0(x))
         x = F.relu(self.fc1(x))
+        x = self.fc2(x)
         return x
 
 
@@ -162,8 +176,9 @@ def experimental_cnn(
 
         net = ExperimentalCNN(input_shape, n_classes)
 
+        # TODO: make weight decay configurable
         optimizer = optim.SGD(
-            net.parameters(), lr=learning_rate, momentum=momentum)
+            net.parameters(), lr=learning_rate, momentum=momentum, weight_decay=0.001)
         loss_func = nn.CrossEntropyLoss()
 
         # open log files
