@@ -374,3 +374,18 @@ def balance(samples, labels, balance_factor, adjust_func):
 
     pairs = [(y, x[0]) for x in grouped_balanced for y in x[1]]
     return zip(*pairs)
+
+
+def subsample(samples, labels, target_size):
+    """subsample a dataset"""
+    resized = random.sample(list(zip(samples, labels)), target_size)
+    return zip(*resized)
+
+
+def augment(samples, labels, augment_factor, augment_func):
+    """augment a dataset"""
+    pairs = list(zip(samples, labels))
+    return zip(*(pairs + [
+        (augment_func(samples[idx]), labels[idx])
+        for idx in range(len(samples))
+        for _ in range(augment_factor)]))
