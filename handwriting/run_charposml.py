@@ -40,12 +40,12 @@ class Config:
     pad_height = attr.ib()
     start_row = attr.ib()
     offset = attr.ib()
+    nn_arch = attr.ib()
+    nn_opt = attr.ib()
     trans_x_size = attr.ib()
     trans_y_size = attr.ib()
     rot_size = attr.ib()
     scale_size = attr.ib()
-    batch_size = attr.ib()
-    max_epochs = attr.ib()
     train: dataset.PrepConfig = attr.ib()
     dev: dataset.PrepConfig = attr.ib()
     test: dataset.PrepConfig = attr.ib()
@@ -56,12 +56,12 @@ CONFIG_DEFAULT = Config(
     pad_height=96,
     start_row=0,
     offset=0,
+    nn_arch={},
+    nn_opt={},
     trans_x_size=0.0,
     trans_y_size=0.0,
     rot_size=0.0,
     scale_size=0.0,
-    batch_size=16,
-    max_epochs=16,
     train=dataset.PrepConfig(),
     dev=dataset.PrepConfig(),
     test=dataset.PrepConfig()
@@ -605,8 +605,8 @@ def main(argv):
                 config.pad_height,
                 config.start_row,
                 do_align=False,
-                batch_size=config.batch_size,
-                max_epochs=config.max_epochs,
+                nn_arch=config.nn_arch,
+                nn_opt=config.nn_opt,
                 epoch_log_filename=model_filename + ".log.txt",
                 prepare_callback=prepare_callback,
                 save_model_filename=model_filename + ".wip",

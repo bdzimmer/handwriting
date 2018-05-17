@@ -27,8 +27,8 @@ def build_classification_process_cnn(
         pad_height,
         start_row,
         do_align,
-        batch_size,
-        max_epochs,
+        nn_arch,
+        nn_opt,
         epoch_log_filename,
         prepare_callback,
         save_model_filename,
@@ -87,10 +87,8 @@ def build_classification_process_cnn(
         callback_log_filename = None
 
     classifier = cnn.experimental_cnn(
-        batch_size=batch_size,
-        max_epochs=max_epochs,
-        learning_rate=0.001,
-        momentum=0.9,
+        nn_arch=nn_arch,
+        nn_opt=nn_opt,
         epoch_log_filename=epoch_log_filename,
         callback_log_filename=callback_log_filename,
         callback=callback,

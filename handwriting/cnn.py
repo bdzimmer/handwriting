@@ -27,20 +27,26 @@ VERBOSE_RATE = 100
 class ExperimentalCNN(nn.Module):
     """Convnet implemented with PyTorch."""
 
-    def __init__(self, input_shape, n_classes):
+    def __init__(
+            self, input_shape, n_classes,
+            conv0_kernel_hwidth=4,
+            conv1_kernel_hwidth=2,
+            conv0_output_channels=16,
+            conv1_output_channels=16,
+            linear0_size=256,
+            linear1_size=128):
         """init function"""
+
         super().__init__()
 
         conv0_input_height, conv0_input_width = input_shape
 
-        conv0_kernel_hwidth = 4  # 4 # 4  # 2
-        conv1_kernel_hwidth = 2  # 4 # 2  # 2
-
-        conv0_output_channels = 16  # 4 # 2  # 4
-        conv1_output_channels = 16  # 4 # 2  # 8
-
-        linear0_size = 256  # 64 # 256
-        linear1_size = 128
+        # conv0_kernel_hwidth = 4  # 4 # 4  # 2
+        # conv1_kernel_hwidth = 2  # 4 # 2  # 2
+        # conv0_output_channels = 16  # 4 # 2  # 4
+        # conv1_output_channels = 16  # 4 # 2  # 8
+        # linear0_size = 256  # 64 # 256
+        # linear1_size = 128
 
         # conv2d args are in channels, out channels, kernel size
         self.conv0 = nn.Conv2d(
@@ -149,10 +155,8 @@ class CallableTorchModel(object):
 
 
 def experimental_cnn(
-        batch_size,
-        max_epochs,
-        learning_rate,
-        momentum,
+        nn_arch,
+        nn_opt,
         epoch_log_filename,
         callback_log_filename,
         callback,
@@ -174,11 +178,14 @@ def experimental_cnn(
         label_map = {k: v for v, k in enumerate(unique_labels)}
         n_classes = len(unique_labels)
 
-        net = ExperimentalCNN(input_shape, n_classes)
+        net = ExperimentalCNN(input_shape, n_classes, **nn_arch)
 
-        # TODO: make weight decay configurable
         optimizer = optim.SGD(
-            net.parameters(), lr=learning_rate, momentum=momentum, weight_decay=0.001)
+            net.parameters(),
+            lr=nn_opt.get("learning_rate", 0.001),
+            momentum=nn_opt.get("momentum", 0.9),
+            weight_decay=nn_opt.get("weight_decay", 0.005))
+
         loss_func = nn.CrossEntropyLoss()
 
         # open log files
@@ -194,7 +201,7 @@ def experimental_cnn(
             else None)
 
         # prepare data loader
-
+        batch_size = nn_opt.get("batch_size", 16)
         if lazy_extractor is None:
             dataloader = DataLoader(
                 ImagesDataset(feats_train, labels_train),
@@ -210,6 +217,7 @@ def experimental_cnn(
 
         start_time = time.time()
 
+        max_epochs = nn_opt.get("max_epochs", 16)
         for epoch in range(max_epochs):
 
             epoch_loss = 0.0
