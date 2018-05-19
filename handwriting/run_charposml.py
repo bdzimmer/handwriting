@@ -26,7 +26,7 @@ from handwriting import data, config as cf
 from handwriting.func import pipe
 from handwriting.prediction import Sample
 
-VISUALIZE = True
+VISUALIZE = False
 
 MODE_TRAIN = "train"
 MODE_TUNE = "tune"
@@ -166,6 +166,62 @@ def _visualize_position_predictions_stacked(
         # disp_im[im_height:double_height, pos_pred[0]:pos_pred[1], 2] = 255
         disp_im[im_height:double_height, pos_pred[0]:(pos_pred[0] + 1)] = (0, 0, 255)
         disp_im[im_height:double_height, (pos_pred[1] - 1):pos_pred[1]] = (0, 0, 255)
+
+    return disp_im
+
+
+def _visualize_boolean_predictions(
+        data_test,
+        labels_test,
+        labels_test_pred,
+        half_width,
+        offset):
+
+    """visualize true / false character position predictions"""
+
+    idx = 0
+    start = 0
+    n_samples = 320
+
+    im_height = data_test[0].data.shape[0]
+    double_height = im_height * 2
+
+    for data, label, label_test in zip(data_test, labels_test, labels_test_pred):
+
+        slice_image = np.asarray(data.data)
+
+        if idx == 0:
+            disp_im = np.zeros((double_height, n_samples + half_width * 2, 3), np.uint8)
+
+        slice_dest = disp_im[0:im_height, idx:(idx + slice_image.shape[1])]
+        slice_new = np.maximum(slice_dest, 255 - slice_image)
+
+        disp_im[0:im_height, idx:(idx + slice_image.shape[1])] = slice_new
+        disp_im[im_height:double_height, idx:(idx + slice_image.shape[1])] = slice_new
+
+        # print(slice_image.shape[1])
+        # cv2.namedWindow("slice image", cv2.WINDOW_NORMAL)
+        # cv2.imshow("slice image", slice_image)
+        # cv2.namedWindow("predictions", cv2.WINDOW_NORMAL)
+        # cv2.imshow("predictions", disp_im)
+        # cv2.waitKey()
+
+        idx = idx + 1
+
+        if idx == n_samples:
+
+            for i in range(0, idx):
+                if labels_test[start + i]:
+                    disp_im[0:im_height, (i + half_width - offset):(i + half_width - offset + 1), 1] = 255
+                if labels_test_pred[start + i]:
+                    disp_im[im_height:double_height, (i + half_width - offset):(i + half_width - offset + 1), 1] = 255
+            # show
+            cv2.namedWindow("predictions", cv2.WINDOW_NORMAL)
+            cv2.imshow("predictions", disp_im)
+            cv2.waitKey()
+
+            start = start + n_samples
+            idx = 0
 
     return disp_im
 
@@ -335,7 +391,7 @@ def _load_samples(filenames, half_width, offset):
         def extract_char_half_width(x, im): return improc.extract_pos(
             (x + offset - half_width, x + offset + half_width), im)
 
-        area_true = 2
+        area_true = 1 # 2
 
         for word_im in word_ims:
 
@@ -346,6 +402,8 @@ def _load_samples(filenames, half_width, offset):
 
                     char_im = char_pos.result.data
 
+                    print(char_pos.result.result, end="")
+
                     for x_pos in range(0, char_im.shape[1]):
 
                         extract_im = extract_char_half_width(
@@ -353,7 +411,7 @@ def _load_samples(filenames, half_width, offset):
 
                         # choose gap samples from start and end of each
                         # character position
-                        label = (x_pos < area_true or x_pos > char_im.shape[1] - area_true - 1)
+                        label = ((x_pos < area_true) or (x_pos > char_im.shape[1] - area_true - 1))
 
                         # choose gap samples only from start
                         # label = True if x_pos < area_true else False
@@ -545,7 +603,7 @@ def main(argv):
     counts_train = ml.label_counts(labels_train)
     print("train group sizes:", counts_train[0])
     print()
-    counts_dev = ml.label_counts(labels_test)
+    counts_dev = ml.label_counts(labels_dev)
     print("dev group sizes:", counts_dev[0])
     print()
     counts_test = ml.label_counts(labels_test)
@@ -567,7 +625,7 @@ def main(argv):
     counts_train = ml.label_counts(labels_train)
     print("train group sizes:", counts_train[0])
     print()
-    counts_dev = ml.label_counts(labels_test)
+    counts_dev = ml.label_counts(labels_dev)
     print("dev group sizes:", counts_dev[0])
     print()
     counts_test = ml.label_counts(labels_test)
@@ -653,6 +711,11 @@ def main(argv):
         feats_test = [feat_extractor(x) for x in data_test]
         labels_test_pred = [classifier(x) for x in feats_test]
 
+        if VISUALIZE:
+            _visualize_boolean_predictions(
+                data_test, labels_test, labels_test_pred, config.half_width, config.offset)
+
+
         # calculate and visualize ROC AUC
         if False:
             # distances_test = model.decision_function(feats_test)
@@ -701,9 +764,11 @@ def main(argv):
         word_ims_test, char_poss_test = _load_words(filenames_test)
         print("done")
 
+        test_range_start = 100
+        test_range_end = 150
         distance_test = build_distance_test(
-            word_ims_test[100:150],
-            char_poss_test[100:150])
+            word_ims_test[test_range_start:test_range_end],
+            char_poss_test[test_range_start:test_range_end])
 
         if False:
             # test the old peak-finding and connected component methods
