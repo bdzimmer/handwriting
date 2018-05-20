@@ -47,7 +47,7 @@ def prepare(
 
     # WARNING! this function is not pure!
     # - destroys its inputs to save memory
-    # - resets RNG seeds after each operation
+    # - resets RNG seeds before each operation
 
     data = list(data_input)
     labels = list(labels_input)
@@ -62,32 +62,39 @@ def prepare(
     if do_subsample:
         if VERBOSE:
             print("\tsubsampling with size", subsample_size)
-        data, labels = ml.subsample(data, labels, subsample_size)
-        gc.collect()
         np.random.seed(seed)
         random.seed(seed)
+        data, labels = ml.subsample(data, labels, subsample_size)
+        gc.collect()
 
     if do_prep_balance:
         if VERBOSE:
             print("\tpreparing for balance")
-        data, labels = ml.prepare_balance(data, labels, balance_size)
-        gc.collect()
         np.random.seed(seed)
         random.seed(seed)
+        data, labels = ml.prepare_balance(data, labels, balance_size)
+        gc.collect()
+
+    if do_subsample or do_prep_balance:
+        # turn everything that's left into fresh arrays rather than memory views
+        print("\tconverting views to arrays to free old data")
+        data = [np.copy(x) for x in data]
+        gc.collect()
 
     if do_balance:
         if VERBOSE:
             print("\tbalancing with size", balance_size)
-        data, labels = ml.balance(data, labels, balance_size, augment_func)
         np.random.seed(seed)
         random.seed(seed)
+        data, labels = ml.balance(data, labels, balance_size, augment_func)
+        gc.collect()
 
     if do_augment:
         if VERBOSE:
             print("\taugmenting with size", augment_size)
-        data, labels = ml.augment(data, labels, augment_size, augment_func)
         np.random.seed(seed)
         random.seed(seed)
+        data, labels = ml.augment(data, labels, augment_size, augment_func)
 
     if VERBOSE:
         print("\tdone")
