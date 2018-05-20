@@ -1,0 +1,38 @@
+{
+  "nn_arch": {
+      "conv0_output_channels": 32,
+      "conv1_output_channels": 16
+  },
+  "nn_opt": {
+    "batch_size": 16,
+    "max_epochs": 32,
+    "learning_rate": 0.001,
+    "momentum": 0.9,
+    "weight_decay": 0.001
+  },
+  "half_width": 16,
+  "offset": 0,
+  "pad_height": 96,
+  "start_row": 0,
+  "train": {
+    "idxs": [0, 1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14],
+    "do_subsample": true,
+    "subsample_size": 50000,
+    "do_augment": false,
+    "augment_size": 1
+  },
+  "dev": {
+    "idxs": [4, 8, 12, 15],
+    "do_subsample": true,
+    "subsample_size": 10000
+  },
+  "test": {
+    "idxs": [16],
+    "do_subsample": true,
+    "subsample_size": 2000
+  },
+  "trans_x_size": 0.0,
+  "trans_y_size": 8.0,
+  "rot_size": 0.1,
+  "scale_size": 0.1
+}
