@@ -9,8 +9,6 @@ a letter or between letters.
 # Copyright (c) 2018 Ben Zimmer. All rights reserved.
 
 from functools import partial
-import gc
-import random
 import sys
 
 import attr
@@ -26,7 +24,7 @@ from handwriting import data, config as cf
 from handwriting.func import pipe
 from handwriting.prediction import Sample
 
-VISUALIZE = False
+VISUALIZE = True
 
 MODE_TRAIN = "train"
 MODE_TUNE = "tune"
@@ -87,17 +85,10 @@ def build_distance_test(word_ims_test, char_poss_test):
                 jaccard_distance)
 
             if visualize:
-                # disp_im = _visualize_position_predictions(
-                #     word_im.data,
-                #     positions_true,
-                #     positions_pred,
-                #     idxs)
-
                 disp_im = _visualize_position_predictions_stacked(
                     word_im,
                     positions_true,
                     positions_pred)
-
                 ims.append(disp_im)
 
             distances.append(cur_distances)
@@ -177,51 +168,26 @@ def _visualize_boolean_predictions(
         half_width,
         offset):
 
-    """visualize true / false character position predictions"""
+    """visualize true / false predictions for verticle slices of an image"""
 
-    idx = 0
-    start = 0
-    n_samples = 320
-
-    im_height = data_test[0].data.shape[0]
+    im_height = data_test[0].shape[0]
     double_height = im_height * 2
 
-    for data, label, label_test in zip(data_test, labels_test, labels_test_pred):
+    disp_im = np.zeros((double_height, len(data_test) + half_width * 2, 3), np.uint8)
 
-        slice_image = np.asarray(data.data)
-
-        if idx == 0:
-            disp_im = np.zeros((double_height, n_samples + half_width * 2, 3), np.uint8)
-
+    # build image of all slices
+    for idx, (slice_image, label, label_test) in enumerate(zip(data_test, labels_test, labels_test_pred)):
         slice_dest = disp_im[0:im_height, idx:(idx + slice_image.shape[1])]
         slice_new = np.maximum(slice_dest, 255 - slice_image)
-
         disp_im[0:im_height, idx:(idx + slice_image.shape[1])] = slice_new
         disp_im[im_height:double_height, idx:(idx + slice_image.shape[1])] = slice_new
 
-        # print(slice_image.shape[1])
-        # cv2.namedWindow("slice image", cv2.WINDOW_NORMAL)
-        # cv2.imshow("slice image", slice_image)
-        # cv2.namedWindow("predictions", cv2.WINDOW_NORMAL)
-        # cv2.imshow("predictions", disp_im)
-        # cv2.waitKey()
-
-        idx = idx + 1
-
-        if idx == n_samples:
-
-            for i in range(0, idx):
-                if labels_test[start + i]:
-                    disp_im[0:im_height, (i + half_width - offset):(i + half_width - offset + 1), 1] = 255
-                if labels_test_pred[start + i]:
-                    disp_im[im_height:double_height, (i + half_width - offset):(i + half_width - offset + 1), 1] = 255
-            # show
-            cv2.namedWindow("predictions", cv2.WINDOW_NORMAL)
-            cv2.imshow("predictions", disp_im)
-            cv2.waitKey()
-
-            start = start + n_samples
-            idx = 0
+    # mark true slices - ground truth above, predictions below
+    for idx in range(len(data_test)):
+        if labels_test[idx]:
+            disp_im[0:im_height, (idx + half_width - offset):(idx + half_width - offset + 1), 1] = 255
+        if labels_test_pred[idx]:
+            disp_im[im_height:double_height, (idx + half_width - offset):(idx + half_width - offset + 1), 1] = 255
 
     return disp_im
 
@@ -391,7 +357,7 @@ def _load_samples(filenames, half_width, offset):
         def extract_char_half_width(x, im): return improc.extract_pos(
             (x + offset - half_width, x + offset + half_width), im)
 
-        area_true = 1 # 2
+        area_true = 1  # 2
 
         for word_im in word_ims:
 
@@ -402,7 +368,7 @@ def _load_samples(filenames, half_width, offset):
 
                     char_im = char_pos.result.data
 
-                    print(char_pos.result.result, end="")
+                    # print(char_pos.result.result, end="")
 
                     for x_pos in range(0, char_im.shape[1]):
 
@@ -653,13 +619,12 @@ def main(argv):
                 data_dev,
                 labels_dev,
                 build_find_prob,
-                distance_test
-            )
+                distance_test)
 
             proc = imml.build_classification_process_cnn(
                 data_train,
                 labels_train,
-                config.half_width * 2 - 8,
+                config.half_width * 2,  # - 8 # I forget the reason I was doing this
                 config.pad_height,
                 config.start_row,
                 do_align=False,
@@ -675,7 +640,7 @@ def main(argv):
             proc = imml.build_classification_process_charpos(
                 data_train,
                 labels_train,
-                config.half_width * 2 - 8,
+                config.half_width * 2,  # - 8,
                 config.pad_height,
                 config.start_row)
 
@@ -711,13 +676,23 @@ def main(argv):
         feats_test = [feat_extractor(x) for x in data_test]
         labels_test_pred = [classifier(x) for x in feats_test]
 
+        # visualize boolean predictions
         if VISUALIZE:
-            _visualize_boolean_predictions(
-                data_test, labels_test, labels_test_pred, config.half_width, config.offset)
-
+            idx = 0
+            slices_per_im = 320
+            while idx < len(data_test):
+                disp_im = _visualize_boolean_predictions(
+                    data_test[idx:(idx + slices_per_im)],
+                    labels_test[idx:(idx + slices_per_im)],
+                    labels_test_pred[idx:(idx + slices_per_im)],
+                    config.half_width, config.offset)
+                cv2.namedWindow("boolean predictions", cv2.WINDOW_NORMAL)
+                cv2.imshow("boolean predictions", disp_im)
+                cv2.waitKey()
+                idx = idx + slices_per_im
 
         # calculate and visualize ROC AUC
-        if False:
+        if False and VISUALIZE:
             # distances_test = model.decision_function(feats_test)
             # distances_test = classifier.model.predict_proba(feats_test)[:, 1]
             distances_test = [classifier.predict_proba(x)[0, 1] for x in feats_test]
