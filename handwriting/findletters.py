@@ -92,11 +92,11 @@ def find_prob(
         if prob > thresh:
             run.append((x, prob))
         else:
-            if len(run) > 1:
+            if len(run) > 0:
                 pos = run[np.argmax([y[1] for y in run])][0]
                 char_poss.append(pos)
                 run = []
-    if len(run) > 1:
+    if len(run) > 0:
         char_poss.append(run[np.argmax([y[1] for y in run])][0])
         # run = []
 

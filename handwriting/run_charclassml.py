@@ -8,8 +8,6 @@ Train a character classifier.
 # Copyright (c) 2017 Ben Zimmer. All rights reserved.
 
 from functools import partial
-import gc
-import random
 import sys
 
 import attr
@@ -18,7 +16,7 @@ import sklearn
 import torch
 
 from handwriting import util, charclass, improc
-from handwriting import ml, imml
+from handwriting import ml, imml, dataset
 from handwriting import data, config as cf
 from handwriting.func import pipe
 from handwriting.prediction import Sample
@@ -36,34 +34,32 @@ class Config:
     pad_width = attr.ib()
     pad_height = attr.ib()
     start_row = attr.ib()
-    do_balance = attr.ib()
-    balance_factor = attr.ib()
+    do_align = attr.ib()
+    nn_arch = attr.ib()
+    nn_opt = attr.ib()
     trans_x_size = attr.ib()
     trans_y_size = attr.ib()
     rot_size = attr.ib()
     scale_size = attr.ib()
-    do_align = attr.ib()
-    batch_size = attr.ib()
-    max_epochs = attr.ib()
-    train_idxs = attr.ib()
-    test_idxs = attr.ib()
+    train: dataset.PrepConfig = attr.ib()
+    dev: dataset.PrepConfig = attr.ib()
+    test: dataset.PrepConfig = attr.ib()
 
 
 CONFIG_DEFAULT = Config(
     pad_width=96,
     pad_height=96,
     start_row=0,
-    do_balance=True,
-    balance_factor=1024,
+    do_align=True,
+    nn_arch={},
+    nn_opt={},
     trans_x_size=0.0,
     trans_y_size=0.0,
     rot_size=0.0,
     scale_size=0.0,
-    do_align=True,
-    batch_size=16,
-    max_epochs=16,
-    train_idxs=list(range(5, 15)),
-    test_idxs=[15]
+    train=dataset.PrepConfig(),
+    dev=dataset.PrepConfig(),
+    test=dataset.PrepConfig()
 )
 
 
@@ -131,6 +127,9 @@ def main(argv):
         config = CONFIG_DEFAULT
     else:
         config = cf.load(Config, argv[2])
+        config.train = dataset.PrepConfig(**config.train)
+        config.dev = dataset.PrepConfig(**config.dev)
+        config.test = dataset.PrepConfig(**config.test)
 
     if len(argv) < 4:
         model_filename = "models/classify_characters.pkl"
@@ -143,107 +142,112 @@ def main(argv):
     print("mode:", mode)
     print("model filename:", model_filename)
 
-    np.random.seed(0)
-    random.seed(0)
     torch.manual_seed(0)
 
+    pad_image = partial(
+        improc.pad_image,
+        width=config.pad_width,
+        height=config.pad_height)
+
+    augment_func = pipe(
+        pad_image,  # pad before rotations
+        partial(
+            improc.transform_random,
+            trans_size=[config.trans_x_size, config.trans_y_size],
+            rot_size=config.rot_size,
+            scale_size=config.scale_size))
+
+    filenames_train = data.pages(config.train.idxs)
+    filenames_dev = data.pages(config.dev.idxs)
+    filenames_test = data.pages(config.test.idxs)
+
+    # for integration testing
+    # filenames_train = data.pages([5, 6, 7])
+    # filenames_dev = data.pages([8])
+    # filenames_test = data.pages([9])
+
+    print("loading and preparing datasets...")
+
+    print("train files:", filenames_train)
+    data_train_raw, labels_train_raw = _load_samples(filenames_train)
+    data_train, labels_train = dataset.prepare(
+        data_train_raw,
+        labels_train_raw,
+        config.train.do_subsample,
+        config.train.subsample_size,
+        config.train.do_prep_balance,
+        config.train.do_balance,
+        config.train.balance_size,
+        config.train.do_augment,
+        config.train.augment_size,
+        augment_func)
+
+    print("dev files:", filenames_dev)
+    data_dev_raw, labels_dev_raw = _load_samples(filenames_dev)
+    data_dev, labels_dev = dataset.prepare(
+        data_dev_raw,
+        labels_dev_raw,
+        config.dev.do_subsample,
+        config.dev.subsample_size,
+        config.dev.do_prep_balance,
+        config.dev.do_balance,
+        config.dev.balance_size,
+        config.dev.do_augment,
+        config.dev.augment_size,
+        augment_func)
+
+    print("test files:", filenames_test)
+    data_test_raw, labels_test_raw = _load_samples(filenames_test)
+    data_test, labels_test = dataset.prepare(
+        data_test_raw,
+        labels_test_raw,
+        config.test.do_subsample,
+        config.test.subsample_size,
+        config.test.do_prep_balance,
+        config.test.do_balance,
+        config.test.balance_size,
+        config.test.do_augment,
+        config.test.augment_size,
+        augment_func)
+
+    # filter by label
+
     min_label_examples = 1
-    do_destructive_prepare_balance = True
-
-    train_filenames = data.pages(config.train_idxs)
-    test_filenames = data.pages(config.test_idxs)
-
-    print("loading and balancing datasets...")
-
-    # load training set
-    data_train_unbalanced, labels_train_unbalanced = _load_samples(train_filenames)
-
-    # eliminate groups from training and test
-    # where we have less than a certain number of samples or they aren't
-    # characters that we currently want to train on
-    train_gr = dict(ml.group_by_label(
-        data_train_unbalanced, labels_train_unbalanced))
     keep_labels = sorted(
-        [x for x, y in train_gr.items()
+        [x for x, y in ml.group_by_label(data_train, labels_train)
          if len(y) >= min_label_examples and x not in IGNORE_CHARS])
-    print("keep labels:", keep_labels)
-
-    train_grf = {x: y for x, y in train_gr.items() if x in keep_labels}
-    data_train_unbalanced, labels_train_unbalanced = zip(*[
-        (y, x[0]) for x in train_grf.items() for y in x[1]])
-
-    print(
-        "unbalanced training data size:",
-        util.mbs(data_train_unbalanced), "MiB")
-
-    train_unbalanced_counts = ml.label_counts(labels_train_unbalanced)
-    print(
-        "training group sizes before balancing:",
-        train_unbalanced_counts[0])
-
-    if do_destructive_prepare_balance:
-        print("destructively prepping training data for balancing")
-        data_train_unbalanced, labels_train_unbalanced = ml.prepare_balance(
-            data_train_unbalanced, labels_train_unbalanced, config.balance_factor)
-        gc.collect()
-
-    print(
-        "prepared training data size:",
-        util.mbs(data_train_unbalanced), "MiB")
-    print()
-
-    if config.do_balance:
-        # balance classes in training set
-        pad_image = partial(
-            improc.pad_image,
-            width=config.pad_width,
-            height=config.pad_height)
-        data_train, labels_train = ml.balance(
-            data_train_unbalanced,
-            labels_train_unbalanced,
-            config.balance_factor,
-            pipe(
-                pad_image,  # pad before rotations
-                partial(
-                    improc.transform_random,
-                    trans_size=[config.trans_x_size, config.trans_y_size],
-                    rot_size=config.rot_size,
-                    scale_size=config.scale_size)))
-    else:
-        data_train = data_train_unbalanced
-        labels_train = labels_train_unbalanced
-
-    # load test set
-    data_test, labels_test = _load_samples(test_filenames)
-
-    test_gr = dict(ml.group_by_label(data_test, labels_test))
-    test_grf = {x: y for x, y in test_gr.items() if x in keep_labels}
-    data_test, labels_test = zip(*[
-        (y, x[0]) for x in test_grf.items() for y in x[1]])
+    data_train, labels_train = dataset.filter_labels(
+        data_train, labels_train, keep_labels)
+    data_dev, labels_dev = dataset.filter_labels(
+        data_dev, labels_dev, keep_labels)
+    data_test, labels_test = dataset.filter_labels(
+        data_test, labels_test, keep_labels)
 
     print("done")
 
-    print("training data size:", util.mbs(data_train), "MiB")
-    print("test data size:    ", util.mbs(data_test), "MiB")
-    print("training count:    ", len(data_train))
-    print("test count:        ", len(data_test))
+    print("train data size:", util.mbs(data_train), "MiB")
+    print("dev data size:  ", util.mbs(data_dev), "MiB")
+    print("test data size: ", util.mbs(data_test), "MiB")
+    print("train count:    ", len(data_train))
+    print("dev count:      ", len(data_dev))
+    print("test count:     ", len(data_test))
     print()
 
-    train_counts = ml.label_counts(labels_train)
-    print(
-        "training group sizes:",
-        train_counts[0])
+    counts_train = ml.label_counts(labels_train)
+    print("train group sizes:", counts_train[0])
     print()
-    test_counts = ml.label_counts(labels_test)
-    print(
-        "test group sizes:",
-        test_counts[0])
+    counts_dev = ml.label_counts(labels_dev)
+    print("dev group sizes:", counts_dev[0])
+    print()
+    counts_test = ml.label_counts(labels_test)
+    print("test group sizes:", counts_test[0])
     print()
 
-    print("training group sizes change in balancing:")
-    for x, y in train_unbalanced_counts[0]:
-        print(x, round(train_counts[1][x] / y, 3))
-    print()
+    # print("training group sizes change in balancing:")
+    # for x, y in train_unbalanced_counts[0]:
+    #     count = train_counts[1].get(x, 0)
+    #     print(x, round(count / y, 3))
+    # print()
 
     if mode == MODE_TRAIN:
 
@@ -252,11 +256,9 @@ def main(argv):
         if True:
             # train a CNN
 
-            # TODO: load separate validation data to use instead of test data
-            data_validate = data_test
-            labels_validate = labels_test
-
-            prepare_callback = build_prepare_callback(data_validate, labels_validate)
+            prepare_callback = build_prepare_callback(
+                data_dev,
+                labels_dev)
 
             proc = imml.build_classification_process_cnn(
                 data_train,
@@ -265,15 +267,14 @@ def main(argv):
                 config.pad_height,
                 config.start_row,
                 do_align=config.do_align,
-                batch_size=config.batch_size,
-                max_epochs=config.max_epochs,
+                nn_arch=config.nn_arch,
+                nn_opt=config.nn_opt,
                 epoch_log_filename=model_filename + ".log.txt",
                 prepare_callback=prepare_callback,
                 save_model_filename=model_filename + ".wip",
                 tsv_filename=model_filename + ".status")
         else:
             # traditional ML
-
             proc = imml.build_classification_process_charclass(
                 data_train,
                 labels_train,

@@ -100,3 +100,13 @@ def prepare(
         print("\tdone")
 
     return data, labels
+
+
+def filter_labels(data, labels, keep_labels):
+    """filter a dataset by label"""
+
+    grouped = dict(ml.group_by_label(data, labels))
+
+    grouped_filtered = {x: y for x, y in grouped.items() if x in keep_labels}
+    return zip(*[
+        (y, x[0]) for x in grouped_filtered.items() for y in x[1]])
