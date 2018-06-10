@@ -77,6 +77,7 @@ def main():
                 ":" + DATA_BUNDLE,
                 ":" + CONFIG_BUNDLE,
                 "\"" + " ".join([
+                    RUN_COMMAND_PREFIX,
                     PYTHON_MODULE,
                     MODULE_ARGS,
                     config_filename,
