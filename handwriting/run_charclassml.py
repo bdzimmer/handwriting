@@ -63,6 +63,14 @@ CONFIG_DEFAULT = Config(
 )
 
 
+def load_config(filename):
+    config = cf.load(Config, filename)
+    config.train = dataset.PrepConfig(**config.train)
+    config.dev = dataset.PrepConfig(**config.dev)
+    config.test = dataset.PrepConfig(**config.test)
+    return config
+
+
 def _load_samples(filenames):
     """load verified character label samples from multiple files"""
 
@@ -126,10 +134,7 @@ def main(argv):
     if len(argv) < 3:
         config = CONFIG_DEFAULT
     else:
-        config = cf.load(Config, argv[2])
-        config.train = dataset.PrepConfig(**config.train)
-        config.dev = dataset.PrepConfig(**config.dev)
-        config.test = dataset.PrepConfig(**config.test)
+        config = load_config(argv[2])
 
     if len(argv) < 4:
         model_filename = "models/classify_characters.pkl"

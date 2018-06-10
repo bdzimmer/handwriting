@@ -23,20 +23,34 @@ class TestML(unittest.TestCase):
 
     def test_run_charclassml(self):
         """test run_charclassml"""
+        config = attr.assoc(run_charclassml.CONFIG_DEFAULT)
+        config.nn_opt["max_epochs"] = 1
+        config.train.idxs = [1]
+        config.train.do_balance = True
+        config.train.balance_size = 64
+        config.dev.idxs = [2]
+        config.test.idxs = [3]
         self._test_training_module(
             run_charclassml,
             "charclass",
-            {"balance_factor": 64, "max_epochs": 1})
+            config)
 
     def test_run_charposml(self):
         """test run_charposml"""
         run_charposml.VERBOSE = True
+        config = attr.assoc(run_charposml.CONFIG_DEFAULT)
+        config.train.idxs = [1]
+        config.nn_opt["max_epochs"] = 1
+        config.train.do_balance = True
+        config.train.balance_size = 64
+        config.dev.idxs = [2]
+        config.test.idxs = [3]
         self._test_training_module(
             run_charposml,
             "charpos",
-            {"balance_factor": 64, "max_epochs": 1})
+            config)
 
-    def _test_training_module(self, module, sub_dirname, config_changes):
+    def _test_training_module(self, module, sub_dirname, config):
         """helper method: run one of the training modules with config,
         testing that it produces output files"""
 
@@ -50,9 +64,6 @@ class TestML(unittest.TestCase):
         os.makedirs(work_dirname)
 
         # generate config file
-        config = attr.assoc(
-            module.CONFIG_DEFAULT,
-            **config_changes)
         config_filename = os.path.join(work_dirname, "config.json")
         cf.save(config, config_filename)
         model_filename = os.path.join(work_dirname, "model.pkl")

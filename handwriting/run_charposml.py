@@ -66,6 +66,14 @@ CONFIG_DEFAULT = Config(
 )
 
 
+def load_config(filename):
+    config = cf.load(Config, filename)
+    config.train = dataset.PrepConfig(**config.train)
+    config.dev = dataset.PrepConfig(**config.dev)
+    config.test = dataset.PrepConfig(**config.test)
+    return config
+
+
 def build_distance_test(word_ims_test, char_poss_test):
     """create a distance test function to measure jaccard distance
     for various methods on test data"""
@@ -468,10 +476,7 @@ def main(argv):
     if len(argv) < 3:
         config = CONFIG_DEFAULT
     else:
-        config = cf.load(Config, argv[2])
-        config.train = dataset.PrepConfig(**config.train)
-        config.dev = dataset.PrepConfig(**config.dev)
-        config.test = dataset.PrepConfig(**config.test)
+        config = load_config(argv[2])
 
     if len(argv) < 4:
         model_filename = "models/classify_charpos.pkl"
